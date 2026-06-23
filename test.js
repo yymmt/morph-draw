@@ -140,13 +140,13 @@
     }
 
     // URLハッシュ監視によるシーン自動構築
-    function checkHashAndLoadTest() {
+    async function checkHashAndLoadTest() {
         const hash = window.location.hash;
         if (!hash.startsWith('#test=')) return;
         const testType = hash.substring(6);
 
         // 新規キャンバスの開始
-        startNewDrawing();
+        await startNewDrawing();
 
         if (testType === 'circle') {
             // 中央に円を配置して選択状態にする
@@ -190,10 +190,28 @@
                 if (wrapShape) {
                     state.selectedShapeIds = [wrapShape.id];
                     state.anchoredShapeIds = []; // アンカーは解除
+
+                    // 3つめの円Cを追加
+                    addShapeAt('circle', 400, 500);
+                    const allCircles = Object.keys(state.shapes).filter(id => state.shapes[id].name && state.shapes[id].name.startsWith('circle'));
+                    const circleCId = allCircles.find(id => id !== shapeIds[0] && id !== shapeIds[1]);
+
+                    if (circleCId) {
+                        // 1. wrapのいずれかの頂点選択 (ArrowRightキーを1回押下してフォーカス)
+                        await emulateKey('ArrowRight');
+
+                        // 2. aキーを押下して追加待ち状態にする
+                        await emulateKey('a');
+
+                        // 3. 円Cを選択状態にする
+                        state.selectedShapeIds = [circleCId];
+
+                        // 4. Enterキーを押下
+                        await emulateKey('Enter');
+                    }
                 }
             }
             renderCanvas();
-            showMessage('Loaded test: edit-vertex (Press ArrowLeft/Right to select vertex, hold t/d to edit)', 3000);
         }
     }
 
