@@ -718,7 +718,7 @@ function pushHistory() {
         focusedVertex: state.focusedVertex,
         selectedShapeIds: state.selectedShapeIds,
         selectedLayerId: state.selectedLayerId
-    });
+    }, stateReplacer);
     if (state.historyIndex >= 0 && current === state.history[state.historyIndex]) return;
     state.history = state.history.slice(0, state.historyIndex + 1);
     state.history.push(current);
@@ -738,6 +738,8 @@ function undo() {
     // MEMO: 「選択→移動→Undo」を行った際に選択状態が解除されてしまう問題（履歴記録時の選択状態の保存タイミングのズレ）は将来対応とする。
     state.selectedShapeIds = (data.selectedShapeIds || []).filter(id => state.shapes[id]);
     state.selectedLayerId = data.selectedLayerId && state.shapes[data.selectedLayerId] ? data.selectedLayerId : null;
+
+    resolveBezierDependencies();
     renderCanvas();
 } /* undo */
 
@@ -752,6 +754,8 @@ function redo() {
     state.focusedVertex = data.focusedVertex || null;
     state.selectedShapeIds = (data.selectedShapeIds || []).filter(id => state.shapes[id]);
     state.selectedLayerId = data.selectedLayerId && state.shapes[data.selectedLayerId] ? data.selectedLayerId : null;
+
+    resolveBezierDependencies();
     renderCanvas(); /* redo */
 
     // MEMO
@@ -1466,11 +1470,17 @@ async function saveDrawing() {
 
     const tx = db.transaction('drawings', 'readwrite');
     const store = tx.objectStore('drawings');
-    await store.put({
-        id: state.currentDrawId,
+    const cleaned = JSON.parse(JSON.stringify({
         shapes: state.shapes,
         beziers: state.beziers,
-        scene: state.scene,
+        scene: state.scene
+    }, stateReplacer));
+
+    await store.put({
+        id: state.currentDrawId,
+        shapes: cleaned.shapes,
+        beziers: cleaned.beziers,
+        scene: cleaned.scene,
         preview: preview,
         updatedAt: Date.now()
     });

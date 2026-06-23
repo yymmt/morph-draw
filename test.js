@@ -43,7 +43,7 @@
             beziers: state.beziers,
             scene: state.scene,
             anchoredShapeIds: state.anchoredShapeIds
-        });
+        }, typeof stateReplacer !== 'undefined' ? stateReplacer : undefined);
     }
 
     function importScene(jsonStr) {
