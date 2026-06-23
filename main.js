@@ -55,6 +55,42 @@ const state = {
     }
 }; /* state */
 
+state.nextIdCounter = 1;
+
+function initializeIdCounter() {
+    let max = 0;
+    const scan = (id) => {
+        if (!id) return;
+        const match = id.match(/[0-9]+/);
+        if (match) {
+            const num = parseInt(match[0], 10);
+            if (!isNaN(num) && num > max) {
+                max = num;
+            }
+        }
+    };
+    Object.keys(state.shapes).forEach(scan);
+    Object.keys(state.beziers).forEach(scan);
+    state.nextIdCounter = max + 1;
+}
+
+function generateId(prefix) {
+    if (!state.nextIdCounter) state.nextIdCounter = 1;
+    const id = `${prefix}${state.nextIdCounter}`;
+    state.nextIdCounter++;
+    return id;
+}
+
+function stateReplacer(key, value) {
+    if (key === 'controlPoints' || key === 'samplePointByT' || key === 'boundingBox') {
+        return undefined;
+    }
+    if (typeof value === 'number') {
+        return Math.round(value * 10000) / 10000;
+    }
+    return value;
+}
+
 const KAPPA = 0.552284749831;
 const PI2 = Math.PI * 2;
 
@@ -968,11 +1004,11 @@ function rotateShape(id, angle) {
 } /* rotateShape */
 
 function addShapeAt(type, x, y) {
-    const id = crypto.randomUUID();
+    const id = generateId('s');
     const bIds = [], r = 50;
     if (type === 'circle') {
         for (let i = 0; i < 4; i++) {
-            const bId = `${id}-b${i}`, a = (i * Math.PI) / 2, na = ((i + 1) * Math.PI) / 2;
+            const bId = generateId('b'), a = (i * Math.PI) / 2, na = ((i + 1) * Math.PI) / 2;
             state.beziers[bId] = {
                 id: bId,
                 generator: {
@@ -1031,12 +1067,12 @@ function createWrap() {
     const src2_up_bezier = shape2.bezierIds[0];
     const src2_down_bezier = shape2.bezierIds[Math.min(2, shape2.bezierIds.length - 1)];
 
-    const wrapId = crypto.randomUUID();
+    const wrapId = generateId('s');
     const bIds = [];
 
     // 4本の接続ベジェを生成（時計回りの環状ループになるように順次接続）
     // 1. 上側接続線: shape1_up -> shape2_up
-    const bId1 = `${wrapId}-b0`;
+    const bId1 = generateId('b');
     state.beziers[bId1] = {
         id: bId1,
         generator: {
@@ -1052,7 +1088,7 @@ function createWrap() {
     bIds.push(bId1);
 
     // 2. 右側代替線: shape2_up -> shape2_down (shape2の側面に重なる線)
-    const bId2 = `${wrapId}-b1`;
+    const bId2 = generateId('b');
     state.beziers[bId2] = {
         id: bId2,
         generator: {
@@ -1068,7 +1104,7 @@ function createWrap() {
     bIds.push(bId2);
 
     // 3. 下側接続線: shape2_down -> shape1_down
-    const bId3 = `${wrapId}-b2`;
+    const bId3 = generateId('b');
     state.beziers[bId3] = {
         id: bId3,
         generator: {
@@ -1084,7 +1120,7 @@ function createWrap() {
     bIds.push(bId3);
 
     // 4. 左側代替線: shape1_down -> shape1_up (shape1の側面に重なる線)
-    const bId4 = `${wrapId}-b3`;
+    const bId4 = generateId('b');
     state.beziers[bId4] = {
         id: bId4,
         generator: {
@@ -1489,10 +1525,13 @@ function openDrawing(id) {
         state.beziers = data.beziers || {};
         state.scene = data.scene || [];
 
+        // IDカウンタの初期化
+        initializeIdCounter();
+
         // マイグレーション: レイヤーが無い場合は、既存のShapeをすべて含むデフォルトレイヤーを自動生成
         const hasLayers = state.scene.some(sid => state.shapes[sid]?.type === 'layer');
         if (!hasLayers) {
-            const newLayerId = crypto.randomUUID();
+            const newLayerId = generateId('l');
             const oldScene = [...state.scene];
             state.shapes[newLayerId] = {
                 id: newLayerId,
@@ -1509,6 +1548,9 @@ function openDrawing(id) {
         // アクティブなレイヤーを設定
         state.selectedLayerId = state.scene[0];
 
+        // 依存関係とキャッシュデータの再計算
+        resolveBezierDependencies();
+
         rasterizeInactiveLayers();
         renderCanvas();
         pushHistory();
@@ -1516,8 +1558,30 @@ function openDrawing(id) {
     }; /* onsuccess */
 } /* openDrawing */
 
-function startNewDrawing() {
-    state.currentDrawId = crypto.randomUUID();
+async function startNewDrawing() {
+    let nextId = 'd1';
+    if (db) {
+        try {
+            const drawings = await new Promise((resolve, reject) => {
+                const tx = db.transaction('drawings', 'readonly');
+                const store = tx.objectStore('drawings');
+                const req = store.getAll();
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+            let max = 0;
+            for (const d of drawings) {
+                if (d.id && d.id.startsWith('d')) {
+                    const num = parseInt(d.id.substring(1), 10);
+                    if (!isNaN(num) && num > max) max = num;
+                }
+            }
+            nextId = `d${max + 1}`;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+    state.currentDrawId = nextId;
     state.shapes = {};
     state.beziers = {};
     state.scene = [];
@@ -1528,9 +1592,10 @@ function startNewDrawing() {
     state.pan = { x: 0, y: 0 };
     state.history = [];
     state.historyIndex = -1;
+    state.nextIdCounter = 1;
 
     // デフォルトレイヤーの作成
-    const layerId = crypto.randomUUID();
+    const layerId = generateId('l');
     state.shapes[layerId] = {
         id: layerId,
         type: 'layer',
@@ -1550,7 +1615,7 @@ function startNewDrawing() {
 } /* startNewDrawing */
 
 function addLayer() {
-    const id = crypto.randomUUID();
+    const id = generateId('l');
     const count = state.scene.filter(sid => state.shapes[sid]?.type === 'layer').length + 1;
     state.shapes[id] = {
         id,
