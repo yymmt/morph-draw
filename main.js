@@ -1013,7 +1013,6 @@ function createWrap() {
     // 生成後の頂点（ベジェ本数）の増減編集機能の設計・実装を行う予定のため、ここは一旦修正を保留とします。
     const targets = Array.from(new Set([...state.anchoredShapeIds, ...state.selectedShapeIds]));
     if (targets.length < 2) {
-        showMessage('接続する図形を2つ選択（またはアンカー）してください', 2000);
         return;
     }
     const [id1, id2] = targets;
@@ -1575,7 +1574,6 @@ function deleteLayer(layerId) {
 
     const layerCount = state.scene.filter(sid => state.shapes[sid]?.type === 'layer').length;
     if (layerCount <= 1) {
-        showMessage('これ以上レイヤーを削除できません', 2000);
         return;
     }
 
@@ -1688,12 +1686,6 @@ function closeSearchMode(confirm = true) {
 
     const input = document.getElementById('search-input');
     if (input) input.blur();
-
-    if (confirm) {
-        showMessage('検索完了', 1000);
-    } else {
-        showMessage('検索キャンセル', 1000);
-    }
 }
 
 function performSearch(query) {
@@ -1774,11 +1766,9 @@ function applySearchResult() {
     if (current.type === 'layer') {
         state.selectedLayerId = current.id;
         state.selectedShapeIds = []; // レイヤー選択時は図形選択をクリア
-        showMessage(`${current.dispName} (${index + 1}/${results.length})`, 2000);
     } else if (current.type === 'shape') {
         state.selectedLayerId = current.layerId; // 図形を含むレイヤーをアクティブに
         state.selectedShapeIds = [current.id];   // 図形を選択
-        showMessage(`${current.dispName} (${index + 1}/${results.length})`, 2000);
     }
     renderCanvas();
 }

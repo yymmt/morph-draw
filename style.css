@@ -240,21 +240,7 @@ body {
     cursor: pointer;
 }
 
-#msg-overlay {
-    position: absolute;
-    top: 2vh;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(33, 150, 243, 0.9);
-    color: white;
-    padding: 1vh 2vh;
-    border-radius: 0.5vh;
-    z-index: 300;
-    pointer-events: none;
-    font-size: 1.8vh;
-}
 
-/* #msg-overlay */
 
 /* Modal Overlay */
 .modal-overlay {

@@ -154,7 +154,6 @@
             const shapeIds = Object.keys(state.shapes).filter(id => state.shapes[id].type !== 'layer');
             state.selectedShapeIds = shapeIds;
             renderCanvas();
-            showMessage('Loaded test: circle', 2000);
         } else if (testType === 'wrap') {
             // 円を2つ配置し、1つを選択状態（黄色）、もう1つをアンカー状態（オレンジ）にする
             addShapeAt('circle', 300, 300);
@@ -166,7 +165,6 @@
                 state.anchoredShapeIds = [shapeIds[1]];
             }
             renderCanvas();
-            showMessage('Loaded test: wrap (Ready for connector)', 2000);
         } else if (testType === 'connector') {
             // 円を2つ配置し、コネクターで接続する
             addShapeAt('circle', 300, 300);
@@ -178,7 +176,6 @@
                 createWrap();
             }
             renderCanvas();
-            showMessage('Loaded test: connector', 2000);
         } else if (testType === 'edit-vertex') {
             // 円を2つ配置し、wrapさせて、そのwrapされたShapeを選択状態にする
             addShapeAt('circle', 300, 300);
