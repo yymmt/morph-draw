@@ -359,8 +359,12 @@ function handleClearVertexFocus(ctx) {
     }
 }
 
-// アンカーのトグル
+// アンカーのトグル、または頂点追加待ち状態への移行
 function handleToggleAnchor(ctx) {
+    if (state.focusedVertex) {
+        state.insertVertexPending = { ...state.focusedVertex };
+        return { pushHistory: false, needsRender: false };
+    }
     state.selectedShapeIds.forEach(id => {
         const idx = state.anchoredShapeIds.indexOf(id);
         if (idx >= 0) {
@@ -369,6 +373,7 @@ function handleToggleAnchor(ctx) {
             state.anchoredShapeIds.push(id);
         }
     });
+    return { pushHistory: true, needsRender: true };
 }
 
 // 変形開始 (m, s, r, t, d, z 押下時)
@@ -572,7 +577,7 @@ function handleZoom(ctx) {
 // キーボードイベントハンドラ定義
 const keyHandlers = {
     no_mod: {
-        x: { keydown: { f: deleteSelectedShapes, pushHistory: true, needsRender: true } },
+        x: { keydown: { f: deleteSelectedShapes } },
         c: { keydown: { f: handleAddCircleStart, needsRender: true } },
         w: { keydown: { f: handleCreateWrap, pushHistory: true, needsRender: true } },
         u: { keydown: { f: handleUndoAction, needsRender: true } },
@@ -584,7 +589,8 @@ const keyHandlers = {
         ArrowLeft: { keydown: { f: handleFocusVertexPrev, needsRender: true } },
         ArrowRight: { keydown: { f: handleFocusVertexNext, needsRender: true } },
         Escape: { keydown: { f: handleClearVertexFocus, needsRender: true } },
-        a: { keydown: { f: handleToggleAnchor, pushHistory: true, needsRender: true } },
+        a: { keydown: { f: handleToggleAnchor } },
+        Enter: { keydown: { f: handleEnterAction } },
 
         m: {
             keydown: { f: handleTransformStart, needsRender: true },
@@ -810,7 +816,17 @@ function findShapeAt(pt) {
 
 
 function deleteSelectedShapes() {
-    if (state.selectedShapeIds.length === 0) return;
+    if (state.focusedVertex) {
+        const { shapeId, vertexIdx } = state.focusedVertex;
+        const shape = state.shapes[shapeId];
+        if (shape && shape.bezierIds && shape.bezierIds.length > 3) {
+            deleteVertex(shapeId, vertexIdx);
+            return { pushHistory: true, needsRender: true };
+        }
+        return { pushHistory: false, needsRender: false };
+    }
+
+    if (state.selectedShapeIds.length === 0) return { pushHistory: false, needsRender: false };
 
     // 各レイヤーからShapeを削除
     state.scene.forEach(layerId => {
@@ -831,9 +847,128 @@ function deleteSelectedShapes() {
 
     state.selectedShapeIds = [];
     state.focusedVertex = null; // 頂点フォーカスもクリア
-    pushHistory();
-    renderCanvas();
+    return { pushHistory: true, needsRender: true };
 } /* deleteSelectedShapes */
+
+// Enterキーが押された時の処理 (頂点の割り込み追加)
+function handleEnterAction() {
+    if (state.insertVertexPending) {
+        const pending = state.insertVertexPending;
+        state.insertVertexPending = null;
+        const targetShapeId = state.selectedShapeIds[0];
+        if (targetShapeId && targetShapeId !== pending.shapeId) {
+            insertVertex(pending.shapeId, pending.vertexIdx, targetShapeId);
+            return { pushHistory: true, needsRender: true };
+        }
+    }
+    return { pushHistory: false, needsRender: false };
+}
+
+function insertVertex(wrapShapeId, vertexIdx, targetShapeId) {
+    const wrapShape = state.shapes[wrapShapeId];
+    const targetShape = state.shapes[targetShapeId];
+    if (!wrapShape || !targetShape || !targetShape.bezierIds || targetShape.bezierIds.length === 0) return;
+
+    const N = wrapShape.bezierIds.length;
+    const bezierIdx = Math.floor(vertexIdx / 2) % N;
+    const bidAB = wrapShape.bezierIds[bezierIdx];
+    const bezAB = state.beziers[bidAB];
+    if (!bezAB) return;
+
+    const bidAC = generateId('b');
+    const bidCB = generateId('b');
+
+    state.beziers[bidAC] = {
+        id: bidAC,
+        generator: {
+            type: 'connector',
+            params: {
+                src1: { ...bezAB.generator.params.src1 },
+                src2: { bezierId: targetShape.bezierIds[0], t: 0 },
+                d1: bezAB.generator.params.d1,
+                d2: 0.1
+            }
+        },
+        controlPoints: [], samplePointByT: {}, boundingBox: {}
+    };
+
+    state.beziers[bidCB] = {
+        id: bidCB,
+        generator: {
+            type: 'connector',
+            params: {
+                src1: { bezierId: targetShape.bezierIds[0], t: 0 },
+                src2: { ...bezAB.generator.params.src2 },
+                d1: 0.1,
+                d2: bezAB.generator.params.d2
+            }
+        },
+        controlPoints: [], samplePointByT: {}, boundingBox: {}
+    };
+
+    delete state.beziers[bidAB];
+    wrapShape.bezierIds.splice(bezierIdx, 1, bidAC, bidCB);
+
+    // 新たに挿入された頂点 (ACの終端) にフォーカス
+    state.focusedVertex = {
+        shapeId: wrapShapeId,
+        vertexIdx: bezierIdx * 2 + 1
+    };
+
+    resolveBezierDependencies();
+}
+
+function deleteVertex(wrapShapeId, vertexIdx) {
+    const shape = state.shapes[wrapShapeId];
+    if (!shape || !shape.bezierIds || shape.bezierIds.length <= 3) return;
+
+    const N = shape.bezierIds.length;
+    const vIdx = Math.floor((vertexIdx + 1) / 2) % N;
+
+    const idx1 = (vIdx - 1 + N) % N;
+    const idx2 = vIdx;
+
+    const bidDA = shape.bezierIds[idx1];
+    const bidAE = shape.bezierIds[idx2];
+    const bezDA = state.beziers[bidDA];
+    const bezAE = state.beziers[bidAE];
+
+    if (!bezDA || !bezAE) return;
+
+    const bidDE = generateId('b');
+    state.beziers[bidDE] = {
+        id: bidDE,
+        generator: {
+            type: 'connector',
+            params: {
+                src1: { ...bezDA.generator.params.src1 },
+                src2: { ...bezAE.generator.params.src2 },
+                d1: bezDA.generator.params.d1,
+                d2: bezAE.generator.params.d2
+            }
+        },
+        controlPoints: [], samplePointByT: {}, boundingBox: {}
+    };
+
+    delete state.beziers[bidDA];
+    delete state.beziers[bidAE];
+
+    if (idx1 < idx2) {
+        shape.bezierIds.splice(idx1, 2, bidDE);
+    } else {
+        shape.bezierIds.splice(idx2, 1);
+        const newIdx1 = shape.bezierIds.indexOf(bidDA);
+        shape.bezierIds.splice(newIdx1, 1, bidDE);
+    }
+
+    const newIdx = shape.bezierIds.indexOf(bidDE);
+    state.focusedVertex = {
+        shapeId: wrapShapeId,
+        vertexIdx: newIdx * 2
+    };
+
+    resolveBezierDependencies();
+}
 
 /**
  * Bezier Math & Engine
