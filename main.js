@@ -56,8 +56,74 @@ const state = {
 }; /* state */
 
 state.nextIdCounter = 1;
+// MEMO [MAY] const state.nextIdCounter = 1;
+
+const MDMath = {
+    KAPPA: 0.552284749831,
+    PI2: Math.PI * 2,
+    
+    generators: {
+        arc: (params) => {
+            const { x, y, r, startAngle, endAngle } = params;
+            const p0 = { x: x + Math.cos(startAngle) * r, y: y + Math.sin(startAngle) * r };
+            const p3 = { x: x + Math.cos(endAngle) * r, y: y + Math.sin(endAngle) * r };
+            const p1 = {
+                x: p0.x - Math.sin(startAngle) * r * MDMath.KAPPA,
+                y: p0.y + Math.cos(startAngle) * r * MDMath.KAPPA
+            };
+            const p2 = {
+                x: p3.x + Math.sin(endAngle) * r * MDMath.KAPPA,
+                y: p3.y - Math.cos(endAngle) * r * MDMath.KAPPA
+            };
+            return [{ v: p0 }, { v: p1 }, { v: p2 }, { v: p3 }];
+        },
+        connector: (state, params) => {
+            const { src1, src2, d1, d2 } = params;
+            const bez1 = state.beziers[src1.bezierId];
+            const bez2 = state.beziers[src2.bezierId];
+            if (!bez1 || !bez2) return [];
+
+            const p0 = MDMath.getPoint(bez1, src1.t);
+            const p3 = MDMath.getPoint(bez2, src2.t);
+            const tan1 = MDMath.getTangent(bez1, src1.t);
+            const tan2 = MDMath.getTangent(bez2, src2.t);
+
+            const p1 = { x: p0.x + tan1.dx * d1, y: p0.y + tan1.dy * d1 };
+            const p2 = { x: p3.x - tan2.dx * d2, y: p3.y - tan2.dy * d2 };
+
+            return [{ v: p0 }, { v: p1 }, { v: p2 }, { v: p3 }];
+        }
+    },
+
+    getPoint: (bez, t) => {
+        if (!bez) return { x: 0, y: 0 };
+        const p = bez.controlPoints.map(cp => cp.v);
+        if (p.length < 4 || p.some(cp => !cp || cp.x === undefined)) {
+            return { x: 0, y: 0 };
+        }
+        const mt = 1 - t;
+        return {
+            x: mt ** 3 * (p[0].x || 0) + 3 * mt ** 2 * t * (p[1].x || 0) + 3 * mt * t ** 2 * (p[2].x || 0) + t ** 3 * (p[3].x || 0),
+            y: mt ** 3 * (p[0].y || 0) + 3 * mt ** 2 * t * (p[1].y || 0) + 3 * mt * t ** 2 * (p[2].y || 0) + t ** 3 * (p[3].y || 0)
+        };
+    },
+
+    getTangent: (bez, t) => {
+        if (!bez) return { dx: 0, dy: 0 };
+        const p = bez.controlPoints.map(cp => cp.v);
+        const mt = 1 - t;
+        const dx = 3 * mt ** 2 * ((p[1].x || 0) - (p[0].x || 0)) + 6 * mt * t * ((p[2].x || 0) - (p[1].x || 0)) + 3 * t ** 2 * ((p[3].x || 0) - (p[2].x || 0));
+        const dy = 3 * mt ** 2 * ((p[1].y || 0) - (p[0].y || 0)) + 6 * mt * t * ((p[2].y || 0) - (p[1].y || 0)) + 3 * t ** 2 * ((p[3].y || 0) - (p[2].y || 0));
+        return { dx, dy };
+    }
+};
 
 function initializeIdCounter() {
+
+    // MEMO [MAY] ラムダ式で短く。
+    // イメージ: 
+    // const allIds = [...Object.keys(state.shapes), ...Object.keys(state.beziers)];
+    // const max = Math.max( 0, ...allIds.map(id => parseInt(id?.match(/[0-9]+/)?.[0] ?? 0, 10)));
     let max = 0;
     const scan = (id) => {
         if (!id) return;
@@ -71,6 +137,9 @@ function initializeIdCounter() {
     };
     Object.keys(state.shapes).forEach(scan);
     Object.keys(state.beziers).forEach(scan);
+    // MEMO [ASK] レイヤーのIDは、shapesで考慮されている感じ？
+    // MEMO ワンライナー ここまで
+
     state.nextIdCounter = max + 1;
 }
 
@@ -91,8 +160,7 @@ function stateReplacer(key, value) {
     return value;
 }
 
-const KAPPA = 0.552284749831;
-const PI2 = Math.PI * 2;
+
 
 let db; /* IndexedDB インスタンス */
 
@@ -176,7 +244,7 @@ function initEvents() {
     window.addEventListener('pointercancel', stop);
 
     window.addEventListener('keydown', async e => {
-        if (e.repeat) return;
+        if (e.repeat) return; // MEMO 左右キーなどはrepeatで連続移動したい気もするが優先度低。
         if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable)) {
             return;
         }
@@ -813,8 +881,7 @@ function findShapeAt(pt) {
     return shapeId ? { shape: state.shapes[shapeId], child: null } : null;
 } /* findShapeAt */
 
-
-
+// MEMO [MAY] deleteSelectedShapesOrVertex にリネームか。
 function deleteSelectedShapes() {
     if (state.focusedVertex) {
         const { shapeId, vertexIdx } = state.focusedVertex;
@@ -824,6 +891,11 @@ function deleteSelectedShapes() {
             return { pushHistory: true, needsRender: true };
         }
         return { pushHistory: false, needsRender: false };
+
+        // MEMO [ASK] 条件によって pushHistory, needsRender を切り替えるパターン悩ましいな。構造化の観点で。要相談かな。まぁでも preventdefault みたいなもんか。。。
+        // 結局呼び出し側で if (res.needsRender) needsRender = true; if (res.pushHistory) shouldPushHistory = true; してるのは微妙だ...
+        // keyHandlers の外で pushHistory が30箇所くらい出てくる。
+
     }
 
     if (state.selectedShapeIds.length === 0) return { pushHistory: false, needsRender: false };
@@ -864,6 +936,7 @@ function handleEnterAction() {
     return { pushHistory: false, needsRender: false };
 }
 
+// MEMO [MAY] stateに依存している部分と、純粋に数学的な部分で分けて、js分けたい気もする。
 function insertVertex(wrapShapeId, vertexIdx, targetShapeId) {
     const wrapShape = state.shapes[wrapShapeId];
     const targetShape = state.shapes[targetShapeId];
@@ -973,76 +1046,23 @@ function deleteVertex(wrapShapeId, vertexIdx) {
 /**
  * Bezier Math & Engine
  */
-const bezierGeneratorMap = {
-    arc: (params) => {
-        const { x, y, r, startAngle, endAngle } = params;
-        const p0 = { x: x + Math.cos(startAngle) * r, y: y + Math.sin(startAngle) * r };
-        const p3 = { x: x + Math.cos(endAngle) * r, y: y + Math.sin(endAngle) * r };
-        const p1 = {
-            x: p0.x - Math.sin(startAngle) * r * KAPPA,
-            y: p0.y + Math.cos(startAngle) * r * KAPPA
-        };
-        const p2 = {
-            x: p3.x + Math.sin(endAngle) * r * KAPPA,
-            y: p3.y - Math.cos(endAngle) * r * KAPPA
-        };
-        return [{ v: p0 }, { v: p1 }, { v: p2 }, { v: p3 }];
-    },
-    connector: (params) => {
-        const { src1, src2, d1, d2 } = params;
-        const bez1 = state.beziers[src1.bezierId];
-        const bez2 = state.beziers[src2.bezierId];
-        if (!bez1 || !bez2) return [];
-
-        const p0 = getBezierPoint(bez1, src1.t);
-        const p3 = getBezierPoint(bez2, src2.t);
-        const tan1 = getBezierTangent(bez1, src1.t);
-        const tan2 = getBezierTangent(bez2, src2.t);
-
-        const p1 = { x: p0.x + tan1.dx * d1, y: p0.y + tan1.dy * d1 };
-        const p2 = { x: p3.x - tan2.dx * d2, y: p3.y - tan2.dy * d2 };
-
-        return [{ v: p0 }, { v: p1 }, { v: p2 }, { v: p3 }];
-    },
-}; /* bezierGeneratorMap */
-
-function getBezierPoint(bez, t) {
-    if (!bez) return { x: 0, y: 0 };
-    const p = bez.controlPoints.map(cp => cp.v);
-    if (p.length < 4 || p.some(cp => !cp || cp.x === undefined)) {
-        // console.warn(`Invalid control points for bezier ${bez.id}`);
-        return { x: 0, y: 0 };
-    }
-    const mt = 1 - t;
-    return {
-        x: mt ** 3 * (p[0].x || 0) + 3 * mt ** 2 * t * (p[1].x || 0) + 3 * mt * t ** 2 * (p[2].x || 0) + t ** 3 * (p[3].x || 0),
-        y: mt ** 3 * (p[0].y || 0) + 3 * mt ** 2 * t * (p[1].y || 0) + 3 * mt * t ** 2 * (p[2].y || 0) + t ** 3 * (p[3].y || 0)
-    };
-} /* getBezierPoint */
-
-function getBezierTangent(bez, t) {
-    if (!bez) return { dx: 0, dy: 0 };
-    const p = bez.controlPoints.map(cp => cp.v);
-    const mt = 1 - t;
-    const dx = 3 * mt ** 2 * ((p[1].x || 0) - (p[0].x || 0)) + 6 * mt * t * ((p[2].x || 0) - (p[1].x || 0)) + 3 * t ** 2 * ((p[3].x || 0) - (p[2].x || 0));
-    const dy = 3 * mt ** 2 * ((p[1].y || 0) - (p[0].y || 0)) + 6 * mt * t * ((p[2].y || 0) - (p[1].y || 0)) + 3 * t ** 2 * ((p[3].y || 0) - (p[2].y || 0));
-    return { dx, dy };
-} /* getBezierTangent */
 
 function updateBezier(id) {
     const bez = state.beziers[id];
     if (!bez || !bez.generator) return;
 
-    const generatorFunc = bezierGeneratorMap[bez.generator.type];
+    const generatorFunc = MDMath.generators[bez.generator.type];
     if (generatorFunc) {
-        bez.controlPoints = generatorFunc(bez.generator.params);
+        bez.controlPoints = bez.generator.type === 'connector'
+            ? generatorFunc(state, bez.generator.params)
+            : generatorFunc(bez.generator.params);
     }
 
     if (!bez.controlPoints || bez.controlPoints.length < 4) return;
 
     bez.samplePointByT = {};
     const sample = (t1, t2) => {
-        const p1 = getBezierPoint(bez, t1), p2 = getBezierPoint(bez, t2);
+        const p1 = MDMath.getPoint(bez, t1), p2 = MDMath.getPoint(bez, t2);
         if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > state.lodPrecision) {
             const mid = (t1 + t2) / 2;
             sample(t1, mid);
@@ -1051,7 +1071,7 @@ function updateBezier(id) {
             bez.samplePointByT[t2] = p2;
         }
     }; /* sample */
-    bez.samplePointByT[0] = getBezierPoint(bez, 0);
+    bez.samplePointByT[0] = MDMath.getPoint(bez, 0);
     sample(0, 1);
 
     // 4. Update Bounding Box
@@ -1304,9 +1324,10 @@ function createWrap() {
 
 function renderCanvas() {
     const svg = document.getElementById('main-svg');
+    if (!svg) return;
     svg.innerHTML = `<defs id="main-defs"></defs><g id="viewport" transform="translate(${state.pan.x}, ${state.pan.y}) scale(${state.zoom}) rotate(${state.rotation})"></g>`;
-    const viewport = svg.getElementById('viewport');
-    const defs = svg.getElementById('main-defs');
+    const viewport = document.getElementById('viewport');
+    const defs = document.getElementById('main-defs');
 
     // activeLayerId に属するShapeのみをメインのSVGに描画
     const activeLayerId = state.selectedLayerId;
@@ -1725,6 +1746,8 @@ async function startNewDrawing() {
         } catch (e) {
             console.error(e);
         }
+        // MEMO [MUST] startNewDrawingの中でid取り直すの悩ましい。ギャラリーの時点で id, name, サムネイル(blob/image/pngあたりでIndexedDBに保持するのはどうか) を state に保持してもよい気がする。要相談。
+        // MEMO [ASK] ギャラリーに表示する画像の名前を編集できるようにしたい。view-gallery → view-canvas → ? キー押下でショートカットキーを表示できるが(そういえばできなくなっているので復活したいが。)、ここに"左ペイン"を設け、「ショートカットキー表示」「画像設定」「共通設定」を切り替えられるようにしたい。要相談。
     }
     state.currentDrawId = nextId;
     state.shapes = {};
