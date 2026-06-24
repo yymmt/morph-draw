@@ -31,6 +31,7 @@ const state = {
     lodPrecision: 10, // 編集時10px, 確定時1px
     lastMousePt: null, // 最新のマウス座標
     selectedLayerId: null, // 現在アクティブなレイヤーID
+    maxDrawingId: 0, // 既存図面IDの最大値キャッシュ
     search: {
         active: false,
         results: [],
@@ -119,27 +120,11 @@ const MDMath = {
 };
 
 function initializeIdCounter() {
-
-    // MEMO [MAY] ラムダ式で短く。
-    // イメージ: 
-    // const allIds = [...Object.keys(state.shapes), ...Object.keys(state.beziers)];
-    // const max = Math.max( 0, ...allIds.map(id => parseInt(id?.match(/[0-9]+/)?.[0] ?? 0, 10)));
-    let max = 0;
-    const scan = (id) => {
-        if (!id) return;
-        const match = id.match(/[0-9]+/);
-        if (match) {
-            const num = parseInt(match[0], 10);
-            if (!isNaN(num) && num > max) {
-                max = num;
-            }
-        }
-    };
-    Object.keys(state.shapes).forEach(scan);
-    Object.keys(state.beziers).forEach(scan);
-    // MEMO [ASK] レイヤーのIDは、shapesで考慮されている感じ？
-    // MEMO ワンライナー ここまで
-
+    const allIds = [...Object.keys(state.shapes), ...Object.keys(state.beziers)];
+    const max = Math.max(0, ...allIds.map(id => {
+        const m = id?.match(/[0-9]+/);
+        return m ? parseInt(m[0], 10) : 0;
+    }));
     state.nextIdCounter = max + 1;
 }
 
@@ -645,7 +630,7 @@ function handleZoom(ctx) {
 // キーボードイベントハンドラ定義
 const keyHandlers = {
     no_mod: {
-        x: { keydown: { f: deleteSelectedShapes } },
+        x: { keydown: { f: deleteSelectedShapesOrVertex } },
         c: { keydown: { f: handleAddCircleStart, needsRender: true } },
         w: { keydown: { f: handleCreateWrap, pushHistory: true, needsRender: true } },
         u: { keydown: { f: handleUndoAction, needsRender: true } },
@@ -881,8 +866,7 @@ function findShapeAt(pt) {
     return shapeId ? { shape: state.shapes[shapeId], child: null } : null;
 } /* findShapeAt */
 
-// MEMO [MAY] deleteSelectedShapesOrVertex にリネームか。
-function deleteSelectedShapes() {
+function deleteSelectedShapesOrVertex() {
     if (state.focusedVertex) {
         const { shapeId, vertexIdx } = state.focusedVertex;
         const shape = state.shapes[shapeId];
@@ -1647,7 +1631,18 @@ function loadGallery() {
     const tx = db.transaction('drawings', 'readonly');
     const store = tx.objectStore('drawings');
     const request = store.getAll();
-    request.onsuccess = () => renderGalleryGrid(request.result);
+    request.onsuccess = () => {
+        const drawings = request.result;
+        let max = 0;
+        for (const d of drawings) {
+            if (d.id && d.id.startsWith('d')) {
+                const num = parseInt(d.id.substring(1), 10);
+                if (!isNaN(num) && num > max) max = num;
+            }
+        }
+        state.maxDrawingId = max;
+        renderGalleryGrid(drawings);
+    };
 } /* loadGallery */
 
 function renderGalleryGrid(items) {
@@ -1724,32 +1719,9 @@ function openDrawing(id) {
     }; /* onsuccess */
 } /* openDrawing */
 
-async function startNewDrawing() {
-    let nextId = 'd1';
-    if (db) {
-        try {
-            const drawings = await new Promise((resolve, reject) => {
-                const tx = db.transaction('drawings', 'readonly');
-                const store = tx.objectStore('drawings');
-                const req = store.getAll();
-                req.onsuccess = () => resolve(req.result);
-                req.onerror = () => reject(req.error);
-            });
-            let max = 0;
-            for (const d of drawings) {
-                if (d.id && d.id.startsWith('d')) {
-                    const num = parseInt(d.id.substring(1), 10);
-                    if (!isNaN(num) && num > max) max = num;
-                }
-            }
-            nextId = `d${max + 1}`;
-        } catch (e) {
-            console.error(e);
-        }
-        // MEMO [MUST] startNewDrawingの中でid取り直すの悩ましい。ギャラリーの時点で id, name, サムネイル(blob/image/pngあたりでIndexedDBに保持するのはどうか) を state に保持してもよい気がする。要相談。
-        // MEMO [ASK] ギャラリーに表示する画像の名前を編集できるようにしたい。view-gallery → view-canvas → ? キー押下でショートカットキーを表示できるが(そういえばできなくなっているので復活したいが。)、ここに"左ペイン"を設け、「ショートカットキー表示」「画像設定」「共通設定」を切り替えられるようにしたい。要相談。
-    }
-    state.currentDrawId = nextId;
+function startNewDrawing() {
+    state.maxDrawingId++;
+    state.currentDrawId = `d${state.maxDrawingId}`;
     state.shapes = {};
     state.beziers = {};
     state.scene = [];
