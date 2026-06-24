@@ -712,7 +712,10 @@ async function handleInputUpdate(event, detail, rawEvent) {
 
     // 1. キーイベント (keydown / keyup) のディスパッチ
     if (event === 'keydown' || event === 'keyup') {
-        const handlerGroup = keyHandlers[modifier]?.[detail];
+        let handlerGroup = keyHandlers[modifier]?.[detail];
+        if (!handlerGroup && modifier === 'shift') {
+            handlerGroup = keyHandlers['no_mod']?.[detail];
+        }
         const config = handlerGroup?.[event];
 
         if (config && config.f) {
