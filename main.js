@@ -57,13 +57,10 @@ const state = {
     }
 }; /* state */
 
-state.nextIdCounter = 1;
-// MEMO [MAY] const state.nextIdCounter = 1;
-
 const MDMath = {
     KAPPA: 0.552284749831,
     PI2: Math.PI * 2,
-    
+
     generators: {
         arc: (params) => {
             const { x, y, r, startAngle, endAngle } = params;
@@ -180,8 +177,6 @@ function initEvents() {
         loadGallery();
         switchView('gallery');
     }; /* btn-back-gallery.onclick */
-    // MEMO: qキーで戻れればよいので、 <button id="btn-back-gallery" class="icon-btn"><i class="bi bi-chevron-left"></i></button> もいったん削除しようかな。
-    // <aside class="toolbar-left">が空になるが、さすがに何かしらボタンにしたいかもしれないから、一応この黒帯は残しておこう。
 
     document.getElementById('btn-toggle-minimap').onclick = () => {
         const panel = document.getElementById('minimap-panel');
@@ -651,7 +646,24 @@ function handleZoom(ctx) {
 // キーボードイベントハンドラ定義
 const keyHandlers = {
     no_mod: {
-        x: { keydown: { f: deleteSelectedShapesOrVertex } },
+        x: { keydown: [
+            {
+                cond: () => {
+                    if (!state.focusedVertex) return false;
+                    const shape = state.shapes[state.focusedVertex.shapeId];
+                    return shape && shape.bezierIds && shape.bezierIds.length > 3;
+                },
+                f: deleteSelectedVertex,
+                pushHistory: true,
+                needsRender: true
+            },
+            {
+                cond: () => state.selectedShapeIds.length > 0,
+                f: deleteSelectedShapes,
+                pushHistory: true,
+                needsRender: true
+            }
+        ] },
         c: { keydown: { f: handleAddCircleStart, needsRender: true } },
         w: { keydown: { f: handleCreateWrap, pushHistory: true, needsRender: true } },
         u: { keydown: { f: handleUndoAction, needsRender: true } },
@@ -737,12 +749,18 @@ async function handleInputUpdate(event, detail, rawEvent) {
         if (!handlerGroup && modifier === 'shift') {
             handlerGroup = keyHandlers['no_mod']?.[detail];
         }
-        const config = handlerGroup?.[event];
-
-        if (config && config.f) {
-            const res = await config.f(ctx);
-            if (config.needsRender || (res && res.needsRender)) needsRender = true;
-            if (config.pushHistory || (res && res.pushHistory)) shouldPushHistory = true;
+        const rawConfigs = handlerGroup?.[event];
+        if (rawConfigs) {
+            const configs = Array.isArray(rawConfigs) ? rawConfigs : [rawConfigs];
+            for (const config of configs) {
+                const conditionMet = !config.cond || config.cond(ctx);
+                if (conditionMet && config.f) {
+                    const res = await config.f(ctx);
+                    if (config.needsRender || (res && res.needsRender)) needsRender = true;
+                    if (config.pushHistory || (res && res.pushHistory)) shouldPushHistory = true;
+                    break;
+                }
+            }
         }
     }
     // 2. ポインタイベント (pointerdown / pointermove / pointerup) のディスパッチ
@@ -874,20 +892,6 @@ function redo() {
 
     resolveBezierDependencies();
     renderCanvas(); /* redo */
-
-    // MEMO
-    // undo, undo, redo としたとき、 state.historyIndex 以降のhistoryを消す必要があるかも。
-    // historyはjs変数上のみなのでJSON化する必要ない。
-
-    // MEMO
-    // 差分管理にしようか悩ましいところ。
-    // selectedShapeIds はたぶん急激に増えたり減ったりするので、差分じゃないほうがいいかも。
-    // 選択以外の、差分管理にしたい操作を {関数名,引数リスト} のhistoryにして持たせるのがいいかしら。
-    // 「スライダー」のように、マウスの移動に連動して連続して動かしている場合は、historyが増えすぎるのを防ぐために、確定時(mouseupかkeyup)の時のみhistoryに追加するような工夫が必要か。(現状stop関数でやってるか。)
-
-    // MEMO
-    // undo, redo 時、selectedShapeIds も復元したいところ。
-    // 将来的に、フォーカスしているレイヤーのみ<svg>DOM、フォーカスしていないレイヤーは<canvas>にラスタライズしておいて描画を高速化する必要がある気がするので、undo, redo時はフォーカスしているレイヤーも復元するようにしたほうがよい。
 } /* redo */
 
 function findClosestSamplePoint(pt) {
@@ -924,24 +928,13 @@ function findShapeAt(pt) {
     return shapeId ? { shape: state.shapes[shapeId], child: null } : null;
 } /* findShapeAt */
 
-function deleteSelectedShapesOrVertex() {
-    if (state.focusedVertex) {
-        const { shapeId, vertexIdx } = state.focusedVertex;
-        const shape = state.shapes[shapeId];
-        if (shape && shape.bezierIds && shape.bezierIds.length > 3) {
-            deleteVertex(shapeId, vertexIdx);
-            return { pushHistory: true, needsRender: true };
-        }
-        return { pushHistory: false, needsRender: false };
+function deleteSelectedVertex() {
+    if (!state.focusedVertex) return;
+    const { shapeId, vertexIdx } = state.focusedVertex;
+    deleteVertex(shapeId, vertexIdx);
+}
 
-        // MEMO [ASK] 条件によって pushHistory, needsRender を切り替えるパターン悩ましいな。構造化の観点で。要相談かな。まぁでも preventdefault みたいなもんか。。。
-        // 結局呼び出し側で if (res.needsRender) needsRender = true; if (res.pushHistory) shouldPushHistory = true; してるのは微妙だ...
-        // keyHandlers の外で pushHistory が30箇所くらい出てくる。
-
-    }
-
-    if (state.selectedShapeIds.length === 0) return { pushHistory: false, needsRender: false };
-
+function deleteSelectedShapes() {
     // 各レイヤーからShapeを削除
     state.scene.forEach(layerId => {
         const layer = state.shapes[layerId];
@@ -961,7 +954,6 @@ function deleteSelectedShapesOrVertex() {
 
     state.selectedShapeIds = [];
     state.focusedVertex = null; // 頂点フォーカスもクリア
-    return { pushHistory: true, needsRender: true };
 } /* deleteSelectedShapes */
 
 // Enterキーが押された時の処理 (頂点の割り込み追加)
@@ -978,7 +970,6 @@ function handleEnterAction() {
     return { pushHistory: false, needsRender: false };
 }
 
-// MEMO [MAY] stateに依存している部分と、純粋に数学的な部分で分けて、js分けたい気もする。
 function insertVertex(wrapShapeId, vertexIdx, targetShapeId) {
     const wrapShape = state.shapes[wrapShapeId];
     const targetShape = state.shapes[targetShapeId];
