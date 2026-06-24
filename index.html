@@ -32,6 +32,100 @@
             <aside class="toolbar-left">
                 <button id="btn-back-gallery" class="icon-btn"><i class="bi bi-chevron-left"></i></button>
                 <hr>
+                <button id="btn-toggle-settings" class="icon-btn"><i class="bi bi-gear"></i></button>
+            </aside>
+
+            <!-- Settings Panel -->
+            <aside id="settings-panel" class="collapsed">
+                <div class="settings-tabs">
+                    <button class="settings-tab-btn active" data-tab="help">ヘルプ</button>
+                    <button class="settings-tab-btn" data-tab="image">画像設定</button>
+                    <button class="settings-tab-btn" data-tab="common">共通設定</button>
+                </div>
+                <div class="settings-content">
+                    <!-- Help Tab -->
+                    <div class="settings-tab-content active" id="tab-help">
+                        <table class="help-table">
+                            <thead>
+                                <tr>
+                                    <th>キー</th>
+                                    <th>アクション</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><kbd>/</kbd></td>
+                                    <td>検索モード（vi風）</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>n</kbd> / <kbd>N</kbd></td>
+                                    <td>検索結果の次/前を選択</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Tab</kbd></td>
+                                    <td>選択図形内のハンドルを順にフォーカス</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>a</kbd></td>
+                                    <td>アンカートグル（頂点フォーカス中は追加待機）</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Enter</kbd></td>
+                                    <td>頂点追加（Shape割り込み）の決定</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>ArrowLeft/Right</kbd></td>
+                                    <td>接続点（頂点）の選択フォーカス</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Escape</kbd></td>
+                                    <td>頂点フォーカス解除</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>m</kbd> / <kbd>r</kbd> / <kbd>s</kbd></td>
+                                    <td>全体移動 / 回転 / 拡大縮小</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>t</kbd> / <kbd>d</kbd></td>
+                                    <td>t値スライド / 接線距離dの調整</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>c</kbd> / <kbd>w</kbd></td>
+                                    <td>円の生成 / Wrap（膜）生成</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>x</kbd></td>
+                                    <td>削除（頂点フォーカス中は頂点削除）</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>u</kbd> / <kbd>Ctrl+r</kbd></td>
+                                    <td>元に戻す (Undo) / やり直し (Redo)</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>q</kbd></td>
+                                    <td>保存してギャラリーに戻る</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>?</kbd></td>
+                                    <td>この設定・ヘルプの表示トグル</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Image Settings Tab -->
+                    <div class="settings-tab-content" id="tab-image">
+                        <div class="settings-group">
+                            <label class="settings-label" for="input-draw-name">画像名</label>
+                            <input id="input-draw-name" class="settings-input" type="text" placeholder="画像名を入力...">
+                        </div>
+                    </div>
+                    <!-- Common Settings Tab -->
+                    <div class="settings-tab-content" id="tab-common">
+                        <div class="settings-group">
+                            <p class="settings-placeholder">共通設定項目（拡張予定）</p>
+                        </div>
+                    </div>
+                </div>
             </aside>
 
             <main id="canvas-container">
@@ -55,88 +149,6 @@
                 </div>
                 <button id="btn-toggle-minimap" class="toggle-btn"><i class="bi bi-chevron-double-left"></i></button>
             </aside>
-        </div>
-
-        <!-- Shortcut Help Modal -->
-        <div id="help-modal" class="modal-overlay hidden">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>キーボードショートカット一覧</h2>
-                    <button id="btn-close-help" class="modal-close-btn">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <table class="help-table">
-                        <thead>
-                            <tr>
-                                <th>キー</th>
-                                <th>アクション</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><kbd>/</kbd></td>
-                                <td>エンティティ検索モード（vi風）</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>n</kbd> / <kbd>N</kbd></td>
-                                <td>検索結果の次/前を選択</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>Tab</kbd></td>
-                                <td>選択図形内のハンドルを順にフォーカス</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>m</kbd> + マウス移動</td>
-                                <td>全体移動</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>r</kbd> + マウス移動</td>
-                                <td>回転</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>s</kbd> + マウス移動</td>
-                                <td>拡大縮小</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>t</kbd> + マウス移動</td>
-                                <td>接続点の参照元 t 値のスライド</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>d</kbd> + マウス移動</td>
-                                <td>接線ハンドルの距離調整</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>c</kbd></td>
-                                <td>円(Circle)を生成</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>w</kbd></td>
-                                <td>選択した2つの図形間に接続ベジェを生成(Wrap)</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>x</kbd></td>
-                                <td>削除</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>u</kbd></td>
-                                <td>元に戻す (Undo)</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>Ctrl+r</kbd> / <kbd>Meta+r</kbd></td>
-                                <td>やり直し (Redo)</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>q</kbd></td>
-                                <td>保存してギャラリーに戻る</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>?</kbd> (Shift+/)</td>
-                                <td>このヘルプの表示/非表示</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
         </div>
     </div>
 
