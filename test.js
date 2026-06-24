@@ -146,7 +146,7 @@
         const testType = hash.substring(6);
 
         // 新規キャンバスの開始
-        await startNewDrawing();
+        startNewDrawing();
 
         if (testType === 'circle') {
             // 中央に円を配置して選択状態にする

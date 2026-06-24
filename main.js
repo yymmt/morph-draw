@@ -32,6 +32,7 @@ const state = {
     lastMousePt: null, // 最新のマウス座標
     selectedLayerId: null, // 現在アクティブなレイヤーID
     maxDrawingId: 0, // 既存図面IDの最大値キャッシュ
+    drawingName: '', // 現在開いている図面の名前
     search: {
         active: false,
         results: [],
@@ -245,15 +246,35 @@ function initEvents() {
         await handleInputUpdate('keyup', e.key, e);
     }); /* window.keyup */
 
-    document.getElementById('btn-close-help').onclick = () => {
-        toggleHelpModal();
-    }; /* btn-close-help.onclick */
-
-    document.getElementById('help-modal').onclick = (e) => {
-        if (e.target === document.getElementById('help-modal')) {
-            toggleHelpModal();
+    document.getElementById('btn-toggle-settings').onclick = () => {
+        const panel = document.getElementById('settings-panel');
+        if (panel) {
+            panel.classList.toggle('collapsed');
         }
-    }; /* help-modal.onclick */
+    };
+
+    document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+        btn.onclick = () => {
+            const tabName = btn.getAttribute('data-tab');
+            switchSettingsTab(tabName);
+        };
+    });
+
+    const drawNameInput = document.getElementById('input-draw-name');
+    if (drawNameInput) {
+        drawNameInput.onblur = () => {
+            if (drawNameInput.value.trim() !== '') {
+                state.drawingName = drawNameInput.value.trim();
+                saveDrawing();
+                pushHistory();
+            } else {
+                drawNameInput.value = state.drawingName;
+            }
+        };
+        drawNameInput.onkeydown = (e) => {
+            if (e.key === 'Enter') drawNameInput.blur();
+        };
+    }
 
     document.getElementById('btn-add-layer').onclick = () => {
         addLayer();
@@ -767,9 +788,43 @@ async function handleInputUpdate(event, detail, rawEvent) {
 } /* handleInputUpdate */
 
 function toggleHelpModal() {
-    const modal = document.getElementById('help-modal');
-    modal.classList.toggle('hidden');
+    const panel = document.getElementById('settings-panel');
+    if (!panel) return;
+    const isCollapsed = panel.classList.contains('collapsed');
+
+    if (isCollapsed) {
+        panel.classList.remove('collapsed');
+        switchSettingsTab('help');
+    } else {
+        const activeTab = panel.querySelector('.settings-tab-btn.active');
+        if (activeTab && activeTab.getAttribute('data-tab') !== 'help') {
+            switchSettingsTab('help');
+        } else {
+            panel.classList.add('collapsed');
+        }
+    }
 } /* toggleHelpModal */
+
+function switchSettingsTab(tabName) {
+    const tabs = document.querySelectorAll('.settings-tab-btn');
+    const contents = document.querySelectorAll('.settings-tab-content');
+
+    tabs.forEach(btn => {
+        if (btn.getAttribute('data-tab') === tabName) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    contents.forEach(content => {
+        if (content.id === `tab-${tabName}`) {
+            content.classList.add('active');
+        } else {
+            content.classList.remove('active');
+        }
+    });
+}
 
 function pushHistory() {
     const current = JSON.stringify({
@@ -1621,6 +1676,7 @@ async function saveDrawing() {
 
     await store.put({
         id: state.currentDrawId,
+        name: state.drawingName || 'Untitled',
         shapes: cleaned.shapes,
         beziers: cleaned.beziers,
         scene: cleaned.scene,
@@ -1659,7 +1715,7 @@ function renderGalleryGrid(items) {
                 ${item.preview ? `<img src="${item.preview}" alt="preview">` : ''}
             </div>
             <div class="card-info">
-                <span>Drawing ${item.id.slice(-4)}</span>
+                <span>${item.name || ('Drawing ' + item.id)}</span>
                 <button class="btn-card-delete" data-id="${item.id}"><i class="bi bi-trash"></i></button>
             </div>
         `; /* card.innerHTML */
@@ -1685,6 +1741,11 @@ function openDrawing(id) {
     request.onsuccess = () => {
         const data = request.result;
         state.currentDrawId = data.id;
+        state.drawingName = data.name || `Drawing ${data.id}`;
+        const nameInput = document.getElementById('input-draw-name');
+        if (nameInput) {
+            nameInput.value = state.drawingName;
+        }
         state.shapes = data.shapes || {};
         state.beziers = data.beziers || {};
         state.scene = data.scene || [];
@@ -1725,6 +1786,11 @@ function openDrawing(id) {
 function startNewDrawing() {
     state.maxDrawingId++;
     state.currentDrawId = `d${state.maxDrawingId}`;
+    state.drawingName = `Drawing ${state.currentDrawId}`;
+    const nameInput = document.getElementById('input-draw-name');
+    if (nameInput) {
+        nameInput.value = state.drawingName;
+    }
     state.shapes = {};
     state.beziers = {};
     state.scene = [];
