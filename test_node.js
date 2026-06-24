@@ -15,6 +15,7 @@ const createDummyElement = () => ({
     width: 0,
     height: 0,
     getBoundingClientRect: () => ({ width: 200, height: 200, top: 0, left: 0, right: 200, bottom: 200 }),
+    cloneNode: () => createDummyElement(),
     classList: {
         toggle: () => {},
         add: () => {},

@@ -644,26 +644,29 @@ function handleZoom(ctx) {
 }
 
 // キーボードイベントハンドラ定義
+// MEMO この構造(condで実行条件を判定してからfを実行することで、事前に pushHistory, needsRender を決定できる)は気に入っているので、今後ハンドラを追加・修正する際はなるべくこの構造に寄せること。
 const keyHandlers = {
     no_mod: {
-        x: { keydown: [
-            {
-                cond: () => {
-                    if (!state.focusedVertex) return false;
-                    const shape = state.shapes[state.focusedVertex.shapeId];
-                    return shape && shape.bezierIds && shape.bezierIds.length > 3;
+        x: {
+            keydown: [
+                {
+                    cond: () => {
+                        if (!state.focusedVertex) return false;
+                        const shape = state.shapes[state.focusedVertex.shapeId];
+                        return shape && shape.bezierIds && shape.bezierIds.length > 3;
+                    },
+                    f: deleteSelectedVertex,
+                    pushHistory: true,
+                    needsRender: true
                 },
-                f: deleteSelectedVertex,
-                pushHistory: true,
-                needsRender: true
-            },
-            {
-                cond: () => state.selectedShapeIds.length > 0,
-                f: deleteSelectedShapes,
-                pushHistory: true,
-                needsRender: true
-            }
-        ] },
+                {
+                    cond: () => state.selectedShapeIds.length > 0,
+                    f: deleteSelectedShapes,
+                    pushHistory: true,
+                    needsRender: true
+                }
+            ]
+        },
         c: { keydown: { f: handleAddCircleStart, needsRender: true } },
         w: { keydown: { f: handleCreateWrap, pushHistory: true, needsRender: true } },
         u: { keydown: { f: handleUndoAction, needsRender: true } },
@@ -1653,8 +1656,16 @@ function switchView(viewId) {
 async function saveDrawing() {
     if (!state.currentDrawId || !db) return;
     const svgEl = document.getElementById('main-svg');
+    
+    // プレビュー用に複製し viewBox 属性を追加することで、アスペクト比を維持して全体表示できるようにする
+    const clonedSvg = svgEl.cloneNode(true);
+    const rect = svgEl.getBoundingClientRect();
+    const width = rect.width || 800;
+    const height = rect.height || 600;
+    clonedSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
     const serializer = new XMLSerializer();
-    const svgString = serializer.serializeToString(svgEl);
+    const svgString = serializer.serializeToString(clonedSvg);
     const preview = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
 
     const tx = db.transaction('drawings', 'readwrite');
