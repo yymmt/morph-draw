@@ -145,6 +145,7 @@ function getShapeThickness(shape, t) {
 }
 
 function generateOutlinePathPoints(shape) {
+    // MEMO: 太さ0の範囲については、計算誤差でわずかにかすれた線が見える場合がありますが、追々、ブラシ機能を拡充するときに最適化などを検討します。
     const leftPoints = [];
     const rightPoints = [];
     const N = shape.bezierIds ? shape.bezierIds.length : 0;
@@ -977,7 +978,7 @@ const keyHandlers = {
             keydown: [
                 {
                     cond: () => state.thicknessEdit.active,
-                    f: handleDeleteThicknessPoint,
+                    f: handleDeleteThicknessPoint, // 太さ編集：データ点削除
                     pushHistory: true,
                     needsRender: true
                 },
@@ -987,29 +988,29 @@ const keyHandlers = {
                         const shape = state.shapes[state.focusedVertex.shapeId];
                         return shape && shape.bezierIds && shape.bezierIds.length > 3;
                     },
-                    f: deleteSelectedVertex,
+                    f: deleteSelectedVertex, // 頂点削除
                     pushHistory: true,
                     needsRender: true
                 },
                 {
                     cond: () => state.selectedShapeIds.length > 0,
-                    f: deleteSelectedShapes,
+                    f: deleteSelectedShapes, // 図形削除
                     pushHistory: true,
                     needsRender: true
                 }
             ]
         },
-        c: { keydown: { f: handleAddCircleStart, needsRender: true } },
+        c: { keydown: { f: handleAddCircleStart, needsRender: true } }, // 円生成
         w: {
             keydown: [
                 {
                     cond: () => state.thicknessEdit.active,
-                    f: handleTransformStart,
+                    f: handleTransformStart, // 太さ編集：ドラッグ変形開始
                     needsRender: true
                 },
                 {
                     cond: () => !state.thicknessEdit.active,
-                    f: handleCreateWrap,
+                    f: handleCreateWrap, // Wrap生成
                     pushHistory: true,
                     needsRender: true
                 }
@@ -1017,67 +1018,67 @@ const keyHandlers = {
             keyup: [
                 {
                     cond: () => state.thicknessEdit.active,
-                    f: handleTransformEnd,
+                    f: handleTransformEnd, // 太さ編集：ドラッグ変形終了
                     pushHistory: true,
                     needsRender: true
                 }
             ]
         },
-        u: { keydown: { f: handleUndoAction, needsRender: true } },
-        '?': { keydown: { f: toggleHelpModal, needsRender: true } },
-        q: { keydown: { f: handleQuitToGallery, needsRender: false } },
-        '/': { keydown: { f: handleOpenSearch, needsRender: false } },
-        n: { keydown: { f: handleSearchNext, needsRender: true } },
-        N: { keydown: { f: handleSearchPrev, needsRender: true } },
-        ArrowLeft: { keydown: { f: handleFocusVertexPrev, needsRender: true } },
-        ArrowRight: { keydown: { f: handleFocusVertexNext, needsRender: true } },
-        Escape: { keydown: { f: handleClearVertexFocus, needsRender: true } },
-        a: { keydown: { f: handleToggleAnchor } },
-        Enter: { keydown: { f: handleEnterAction } },
+        u: { keydown: { f: handleUndoAction, needsRender: true } }, // Undo
+        '?': { keydown: { f: toggleHelpModal, needsRender: true } }, // ヘルプ表示トグル
+        q: { keydown: { f: handleQuitToGallery, needsRender: false } }, // 保存してギャラリーに戻る
+        '/': { keydown: { f: handleOpenSearch, needsRender: false } }, // 検索モード開始
+        n: { keydown: { f: handleSearchNext, needsRender: true } }, // 検索結果・次
+        N: { keydown: { f: handleSearchPrev, needsRender: true } }, // 検索結果・前
+        ArrowLeft: { keydown: { f: handleFocusVertexPrev, needsRender: true } }, // 頂点フォーカス前へ
+        ArrowRight: { keydown: { f: handleFocusVertexNext, needsRender: true } }, // 頂点フォーカス次へ
+        Escape: { keydown: { f: handleClearVertexFocus, needsRender: true } }, // 頂点フォーカス解除
+        a: { keydown: { f: handleToggleAnchor } }, // アンカートグル / 頂点追加待機
+        Enter: { keydown: { f: handleEnterAction } }, // 頂点割り込み接続決定
 
         m: {
-            keydown: { f: handleTransformStart, needsRender: true },
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true }
+            keydown: { f: handleTransformStart, needsRender: true }, // 移動開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 移動終了
         },
         s: {
-            keydown: { f: handleTransformStart, needsRender: true },
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true }
+            keydown: { f: handleTransformStart, needsRender: true }, // 拡大縮小開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 拡大縮小終了
         },
         r: {
-            keydown: { f: handleTransformStart, needsRender: true },
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true }
+            keydown: { f: handleTransformStart, needsRender: true }, // 回転開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 回転終了
         },
         t: {
-            keydown: { f: handleTransformStart, needsRender: true },
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true }
+            keydown: { f: handleTransformStart, needsRender: true }, // t値（または太さ編集t位置）スライド開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // t値（または太さ編集t位置）スライド終了
         },
         d: {
-            keydown: { f: handleTransformStart, needsRender: true },
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true }
+            keydown: { f: handleTransformStart, needsRender: true }, // 接線距離d調整開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 接線距離d調整終了
         },
         z: {
-            keydown: { f: handleTransformStart, needsRender: true },
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true }
+            keydown: { f: handleTransformStart, needsRender: true }, // ズーム開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // ズーム終了
         }
     },
     shift: {
-        W: { keydown: { f: handleToggleThicknessEdit, needsRender: true } },
-        w: { keydown: { f: handleToggleThicknessEdit, needsRender: true } },
-        S: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } },
-        s: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } },
-        F: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } },
-        f: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } },
+        W: { keydown: { f: handleToggleThicknessEdit, needsRender: true } }, // 太さ編集モードトグル
+        w: { keydown: { f: handleToggleThicknessEdit, needsRender: true } }, // 太さ編集モードトグル
+        S: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } }, // 輪郭トグル
+        s: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } }, // 輪郭トグル
+        F: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } }, // 塗りトグル
+        f: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } }, // 塗りトグル
         T: {
-            keydown: { f: handleTransformStart, needsRender: true },
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true }
+            keydown: { f: handleTransformStart, needsRender: true }, // 最も近い太さデータt移動開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 最も近い太さデータt移動終了
         },
         t: {
-            keydown: { f: handleTransformStart, needsRender: true },
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true }
+            keydown: { f: handleTransformStart, needsRender: true }, // 最も近い太さデータt移動開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 最も近い太さデータt移動終了
         }
     },
     ctrl: {
-        r: { keydown: { f: handleRedoAction, needsRender: true } }
+        r: { keydown: { f: handleRedoAction, needsRender: true } } // Redo
     }
 };
 
