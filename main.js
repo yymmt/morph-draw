@@ -115,9 +115,13 @@ const MDMath = {
     getTangent: (bez, t) => {
         if (!bez) return { dx: 0, dy: 0 };
         const p = bez.controlPoints.map(cp => cp.v);
+        if (p.length < 4 || p.some(cp => !cp || cp.x === undefined)) {
+            return { dx: 0, dy: 0 };
+        }
         const mt = 1 - t;
         const dx = 3 * mt ** 2 * ((p[1].x || 0) - (p[0].x || 0)) + 6 * mt * t * ((p[2].x || 0) - (p[1].x || 0)) + 3 * t ** 2 * ((p[3].x || 0) - (p[2].x || 0));
         const dy = 3 * mt ** 2 * ((p[1].y || 0) - (p[0].y || 0)) + 6 * mt * t * ((p[2].y || 0) - (p[1].y || 0)) + 3 * t ** 2 * ((p[3].y || 0) - (p[2].y || 0));
+        return { dx, dy };
     }
 };
 

@@ -227,6 +227,65 @@ try {
     }
 
     console.log('✅ test_node.js: N-Wrap vertex deletion test passed!');
+
+    // --- 追加テスト3：動的太さ補間＆編集（トグル・補間・削除）テスト ---
+    try {
+        const testShape = {
+            id: 's_test',
+            type: 'bezier-group',
+            bezierIds: ['bez-1'],
+            style: { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true },
+            strokeWidthData: [{ t: 0, w: 10 }, { t: 0.5, w: 2 }, { t: 1, w: 10 }]
+        };
+        sandbox.state.shapes['s_test'] = testShape;
+        sandbox.state.selectedShapeIds = ['s_test'];
+
+        // 1. getShapeThickness の線形補間テスト
+        const w0 = vm.runInContext("getShapeThickness(state.shapes['s_test'], 0.0)", sandbox);
+        const w025 = vm.runInContext("getShapeThickness(state.shapes['s_test'], 0.25)", sandbox);
+        const w05 = vm.runInContext("getShapeThickness(state.shapes['s_test'], 0.5)", sandbox);
+        const w1 = vm.runInContext("getShapeThickness(state.shapes['s_test'], 1.0)", sandbox);
+
+        if (w0 !== 10) throw new Error(`w(0) should be 10, got ${w0}`);
+        if (Math.abs(w025 - 6) > 1e-4) throw new Error(`w(0.25) should be 6, got ${w025}`);
+        if (w05 !== 2) throw new Error(`w(0.5) should be 2, got ${w05}`);
+        if (w1 !== 10) throw new Error(`w(1) should be 10, got ${w1}`);
+        console.log('✅ test_node.js: thickness interpolation test passed!');
+
+        // 2. トグルキーイベントのシミュレート (Shift+s, Shift+f, Shift+w)
+        vm.runInContext("handleInputUpdate('keydown', 's', { shiftKey: true, preventDefault: () => {} })", sandbox);
+        if (testShape.style.outline !== false) throw new Error('Shift+s toggle outline failed');
+        
+        vm.runInContext("handleInputUpdate('keydown', 'f', { shiftKey: true, preventDefault: () => {} })", sandbox);
+        if (testShape.style.fillEnabled !== false) throw new Error('Shift+f toggle fillEnabled failed');
+
+        vm.runInContext("handleInputUpdate('keydown', 'w', { shiftKey: true, preventDefault: () => {} })", sandbox);
+        if (sandbox.state.thicknessEdit.active !== true) throw new Error('Shift+w enable thicknessEdit failed');
+        console.log('✅ test_node.js: outline/fill/thickness toggle test passed!');
+
+        // 3. 太さ編集モード中のキー操作 (削除: x) のエミュレート
+        sandbox.state.thicknessEdit.targetT = 0.5;
+        vm.runInContext("handleInputUpdate('keydown', 'x', { preventDefault: () => {} })", sandbox);
+        
+        if (testShape.strokeWidthData.length !== 2) {
+            throw new Error(`Thickness point deletion failed. strokeWidthData length should be 2, got ${testShape.strokeWidthData.length}`);
+        }
+        if (testShape.strokeWidthData.some(pt => pt.t === 0.5)) {
+            throw new Error('Point t=0.5 should be deleted');
+        }
+
+        sandbox.state.thicknessEdit.targetT = 0.0;
+        vm.runInContext("handleInputUpdate('keydown', 'x', { preventDefault: () => {} })", sandbox);
+        if (testShape.strokeWidthData.length !== 2) {
+            throw new Error('Endpoint t=0 should not be deletable');
+        }
+
+        console.log('✅ test_node.js: thickness edit key control test passed!');
+    } catch (err) {
+        console.error('❌ test_node.js: thickness test failed!', err);
+        process.exit(1);
+    }
+
     process.exit(0);
 } catch (err) {
     console.error('❌ test_node.js: N-Wrap test failed!', err);
