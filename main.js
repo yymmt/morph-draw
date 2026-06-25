@@ -22,6 +22,11 @@ const state = {
     selectedShapeIds: [],
     anchoredShapeIds: [], // アンカーされた図形ID。オレンジ色で表示。
     focusedVertex: null,   // 現在フォーカスされているベジェ端点（調整ハンドル）。構造: { shapeId, vertexIdx } (vertexIdx: 0〜2N-1)
+    thicknessEdit: {
+        active: false,
+        targetT: 0.0,
+        editIndex: -1
+    },
     dragInfo: null, // { type: 'move'|'pan'|'key-hold'|'drag', ... }
     interaction: {
         mode: null, // 'move', 'scale', 'rotate', 'pan'
@@ -523,14 +528,207 @@ function handleToggleAnchor(ctx) {
     return { pushHistory: true, needsRender: true };
 }
 
+// 太さ編集モードのトグル (Shift+w)
+function handleToggleThicknessEdit(ctx) {
+    if (state.selectedShapeIds.length > 0) {
+        state.thicknessEdit.active = !state.thicknessEdit.active;
+        if (state.thicknessEdit.active) {
+            state.thicknessEdit.targetT = 0.0;
+            state.thicknessEdit.editIndex = -1;
+            const guide = document.getElementById('thickness-guide');
+            if (guide) guide.classList.remove('hidden');
+        } else {
+            const guide = document.getElementById('thickness-guide');
+            if (guide) guide.classList.add('hidden');
+        }
+        return { pushHistory: false, needsRender: true };
+    }
+    return { pushHistory: false, needsRender: false };
+}
+
+// 輪郭のトグル (Shift+s)
+function handleToggleOutline(ctx) {
+    if (state.selectedShapeIds.length > 0) {
+        state.selectedShapeIds.forEach(id => {
+            const shape = state.shapes[id];
+            if (shape && shape.style) {
+                shape.style.outline = !shape.style.outline;
+            }
+        });
+        rasterizeInactiveLayers();
+        return { pushHistory: true, needsRender: true };
+    }
+    return { pushHistory: false, needsRender: false };
+}
+
+// 塗りのトグル (Shift+f)
+function handleToggleFillEnabled(ctx) {
+    if (state.selectedShapeIds.length > 0) {
+        state.selectedShapeIds.forEach(id => {
+            const shape = state.shapes[id];
+            if (shape && shape.style) {
+                shape.style.fillEnabled = !shape.style.fillEnabled;
+            }
+        });
+        rasterizeInactiveLayers();
+        return { pushHistory: true, needsRender: true };
+    }
+    return { pushHistory: false, needsRender: false };
+}
+
+// 太さ変更ドラッグの開始
+function handleWSlideThicknessStart() {
+    if (state.selectedShapeIds.length === 0) return;
+    const shapeId = state.selectedShapeIds[0];
+    const shape = state.shapes[shapeId];
+    if (!shape || !shape.strokeWidthData) return;
+    
+    const targetT = state.thicknessEdit.targetT;
+    let closestIndex = -1;
+    let minDiff = 0.05;
+    shape.strokeWidthData.forEach((p, idx) => {
+        const diff = Math.abs(p.t - targetT);
+        if (diff <= minDiff) {
+            minDiff = diff;
+            closestIndex = idx;
+        }
+    });
+    
+    if (closestIndex >= 0) {
+        state.thicknessEdit.editIndex = closestIndex;
+    } else {
+        const currentW = getShapeThickness(shape, targetT);
+        const newPoint = { t: targetT, w: currentW };
+        shape.strokeWidthData.push(newPoint);
+        shape.strokeWidthData.sort((a, b) => a.t - b.t);
+        state.thicknessEdit.editIndex = shape.strokeWidthData.indexOf(newPoint);
+    }
+}
+
+// データポイント移動ドラッグの開始
+function handleTMoveThicknessStart() {
+    if (state.selectedShapeIds.length === 0) return;
+    const shapeId = state.selectedShapeIds[0];
+    const shape = state.shapes[shapeId];
+    if (!shape || !shape.strokeWidthData) return;
+    
+    const targetT = state.thicknessEdit.targetT;
+    let closestIndex = -1;
+    let minDiff = Infinity;
+    shape.strokeWidthData.forEach((p, idx) => {
+        if (p.t === 0 || p.t === 1) return;
+        const diff = Math.abs(p.t - targetT);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestIndex = idx;
+        }
+    });
+    
+    state.thicknessEdit.editIndex = closestIndex;
+}
+
+// targetT のスライド処理
+function handleTSlideThickness(ctx) {
+    let nextT = state.thicknessEdit.targetT + ctx.dx * 0.005;
+    if (nextT > 1) nextT -= 1;
+    if (nextT < 0) nextT += 1;
+    state.thicknessEdit.targetT = nextT;
+}
+
+// 太さ変更処理
+function handleWSlideThickness(ctx) {
+    if (state.selectedShapeIds.length === 0) return;
+    const shapeId = state.selectedShapeIds[0];
+    const shape = state.shapes[shapeId];
+    if (!shape || !shape.strokeWidthData) return;
+    
+    const editIndex = state.thicknessEdit.editIndex;
+    if (editIndex >= 0 && editIndex < shape.strokeWidthData.length) {
+        let w = shape.strokeWidthData[editIndex].w - ctx.dy * 0.2;
+        w = Math.max(0.1, w);
+        shape.strokeWidthData[editIndex].w = w;
+        resolveBezierDependencies();
+    }
+}
+
+// データポイント移動処理
+function handleTMoveThickness(ctx) {
+    if (state.selectedShapeIds.length === 0) return;
+    const shapeId = state.selectedShapeIds[0];
+    const shape = state.shapes[shapeId];
+    if (!shape || !shape.strokeWidthData) return;
+    
+    const editIndex = state.thicknessEdit.editIndex;
+    if (editIndex >= 0 && editIndex < shape.strokeWidthData.length) {
+        const p = shape.strokeWidthData[editIndex];
+        if (p.t === 0 || p.t === 1) return;
+        
+        let t = p.t + ctx.dx * 0.005;
+        const minT = shape.strokeWidthData[editIndex - 1].t + 0.01;
+        const maxT = shape.strokeWidthData[editIndex + 1].t - 0.01;
+        t = Math.max(minT, Math.min(maxT, t));
+        
+        p.t = t;
+        state.thicknessEdit.targetT = t;
+        resolveBezierDependencies();
+    }
+}
+
+// データポイントの削除 (x)
+function handleDeleteThicknessPoint(ctx) {
+    if (state.selectedShapeIds.length === 0) return { pushHistory: false, needsRender: false };
+    const shapeId = state.selectedShapeIds[0];
+    const shape = state.shapes[shapeId];
+    if (!shape || !shape.strokeWidthData) return { pushHistory: false, needsRender: false };
+    
+    const targetT = state.thicknessEdit.targetT;
+    let closestIndex = -1;
+    let minDiff = 0.05;
+    shape.strokeWidthData.forEach((p, idx) => {
+        if (p.t === 0 || p.t === 1) return;
+        const diff = Math.abs(p.t - targetT);
+        if (diff <= minDiff) {
+            minDiff = diff;
+            closestIndex = idx;
+        }
+    });
+    
+    if (closestIndex >= 0 && shape.strokeWidthData.length > 2) {
+        shape.strokeWidthData.splice(closestIndex, 1);
+        resolveBezierDependencies();
+        return { pushHistory: true, needsRender: true };
+    }
+    return { pushHistory: false, needsRender: false };
+}
+
+
 // 変形開始 (m, s, r, t, d, z 押下時)
 function handleTransformStart(ctx) {
     const key = ctx.detail;
-    const modeMap = { m: 'move', s: 'scale', r: 'rotate', t: 't-slide', d: 'd-dist', z: 'zoom' };
-    const desiredMode = modeMap[key] || null;
+    const isShift = ctx.rawEvent ? ctx.rawEvent.shiftKey : false;
+    
+    let desiredMode = null;
+    
+    if (state.thicknessEdit.active) {
+        if ((key === 't' || key === 'T') && isShift) {
+            desiredMode = 't-move-thickness';
+            handleTMoveThicknessStart();
+        } else if (key === 't' || key === 'T') {
+            desiredMode = 't-slide-thickness';
+        } else if (key === 'w' || key === 'W') {
+            desiredMode = 'w-slide-thickness';
+            handleWSlideThicknessStart();
+        }
+    } else {
+        const modeMap = { m: 'move', s: 'scale', r: 'rotate', t: 't-slide', d: 'd-dist', z: 'zoom' };
+        desiredMode = modeMap[key] || null;
+    }
 
-    if (desiredMode !== state.interaction.mode) {
-        const hasTarget = desiredMode === 'zoom' || state.selectedShapeIds.length > 0 || (state.focusedVertex && (desiredMode === 't-slide' || desiredMode === 'd-dist'));
+    if (desiredMode && desiredMode !== state.interaction.mode) {
+        const hasTarget = desiredMode === 'zoom' || 
+                          state.selectedShapeIds.length > 0 || 
+                          (state.focusedVertex && (desiredMode === 't-slide' || desiredMode === 'd-dist')) ||
+                          (state.thicknessEdit.active && (desiredMode === 't-slide-thickness' || desiredMode === 'w-slide-thickness' || desiredMode === 't-move-thickness'));
         if (hasTarget) {
             state.dragInfo = {
                 start: { ...state.input.pointer },
@@ -544,13 +742,26 @@ function handleTransformStart(ctx) {
 // 変形終了 (キーリリース時)
 function handleTransformEnd(ctx) {
     const key = ctx.detail;
-    const modeMap = { m: 'move', s: 'scale', r: 'rotate', t: 't-slide', d: 'd-dist', z: 'zoom' };
-    const mappedMode = modeMap[key];
+    let mappedMode = null;
+    
+    if (state.thicknessEdit.active) {
+        if (key === 't' || key === 'T') {
+            if (state.interaction.mode === 't-move-thickness' || state.interaction.mode === 't-slide-thickness') {
+                mappedMode = state.interaction.mode;
+            }
+        } else if (key === 'w' || key === 'W') {
+            mappedMode = 'w-slide-thickness';
+        }
+    } else {
+        const modeMap = { m: 'move', s: 'scale', r: 'rotate', t: 't-slide', d: 'd-dist', z: 'zoom' };
+        mappedMode = modeMap[key];
+    }
 
-    if (mappedMode === state.interaction.mode) {
+    if (mappedMode && mappedMode === state.interaction.mode) {
         state.interaction.mode = null;
         if (state.dragInfo) {
             state.dragInfo = null;
+            rasterizeInactiveLayers();
             return { pushHistory: true, needsRender: true };
         }
     }
@@ -728,6 +939,12 @@ const keyHandlers = {
         x: {
             keydown: [
                 {
+                    cond: () => state.thicknessEdit.active,
+                    f: handleDeleteThicknessPoint,
+                    pushHistory: true,
+                    needsRender: true
+                },
+                {
                     cond: () => {
                         if (!state.focusedVertex) return false;
                         const shape = state.shapes[state.focusedVertex.shapeId];
@@ -746,7 +963,29 @@ const keyHandlers = {
             ]
         },
         c: { keydown: { f: handleAddCircleStart, needsRender: true } },
-        w: { keydown: { f: handleCreateWrap, pushHistory: true, needsRender: true } },
+        w: {
+            keydown: [
+                {
+                    cond: () => state.thicknessEdit.active,
+                    f: handleTransformStart,
+                    needsRender: true
+                },
+                {
+                    cond: () => !state.thicknessEdit.active,
+                    f: handleCreateWrap,
+                    pushHistory: true,
+                    needsRender: true
+                }
+            ],
+            keyup: [
+                {
+                    cond: () => state.thicknessEdit.active,
+                    f: handleTransformEnd,
+                    pushHistory: true,
+                    needsRender: true
+                }
+            ]
+        },
         u: { keydown: { f: handleUndoAction, needsRender: true } },
         '?': { keydown: { f: toggleHelpModal, needsRender: true } },
         q: { keydown: { f: handleQuitToGallery, needsRender: false } },
@@ -784,6 +1023,22 @@ const keyHandlers = {
             keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true }
         }
     },
+    shift: {
+        W: { keydown: { f: handleToggleThicknessEdit, needsRender: true } },
+        w: { keydown: { f: handleToggleThicknessEdit, needsRender: true } },
+        S: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } },
+        s: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } },
+        F: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } },
+        f: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } },
+        T: {
+            keydown: { f: handleTransformStart, needsRender: true },
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true }
+        },
+        t: {
+            keydown: { f: handleTransformStart, needsRender: true },
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true }
+        }
+    },
     ctrl: {
         r: { keydown: { f: handleRedoAction, needsRender: true } }
     }
@@ -808,6 +1063,15 @@ const modeHandlers = {
     },
     zoom: {
         pointermove: { f: handleZoom, needsRender: true }
+    },
+    't-slide-thickness': {
+        pointermove: { f: handleTSlideThickness, needsRender: true }
+    },
+    'w-slide-thickness': {
+        pointermove: { f: handleWSlideThickness, needsRender: true }
+    },
+    't-move-thickness': {
+        pointermove: { f: handleTMoveThickness, needsRender: true }
     }
 };
 
