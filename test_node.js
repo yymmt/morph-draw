@@ -30,6 +30,7 @@ const createDummyElement = () => ({
         rotate: () => {},
         drawImage: () => {}
     }),
+    toBlob: (cb) => cb(new sandbox.Blob()),
     setAttribute: () => {},
     appendChild: () => {},
     querySelector: () => createDummyElement(),
@@ -51,6 +52,11 @@ const sandbox = {
     window: {
         addEventListener: () => {},
         devicePixelRatio: 1
+    },
+    Blob: class {},
+    URL: {
+        createObjectURL: (blob) => 'blob:mock-url',
+        revokeObjectURL: (url) => {}
     },
     console: console,
     Math: Math,
@@ -241,10 +247,10 @@ try {
         sandbox.state.selectedShapeIds = ['s_test'];
 
         // 1. getShapeThickness の線形補間テスト
-        const w0 = vm.runInContext("getShapeThickness(state.shapes['s_test'], 0.0)", sandbox);
-        const w025 = vm.runInContext("getShapeThickness(state.shapes['s_test'], 0.25)", sandbox);
-        const w05 = vm.runInContext("getShapeThickness(state.shapes['s_test'], 0.5)", sandbox);
-        const w1 = vm.runInContext("getShapeThickness(state.shapes['s_test'], 1.0)", sandbox);
+        const w0 = vm.runInContext("MDMath.getShapeThickness(state.shapes['s_test'], 0.0)", sandbox);
+        const w025 = vm.runInContext("MDMath.getShapeThickness(state.shapes['s_test'], 0.25)", sandbox);
+        const w05 = vm.runInContext("MDMath.getShapeThickness(state.shapes['s_test'], 0.5)", sandbox);
+        const w1 = vm.runInContext("MDMath.getShapeThickness(state.shapes['s_test'], 1.0)", sandbox);
 
         if (w0 !== 10) throw new Error(`w(0) should be 10, got ${w0}`);
         if (Math.abs(w025 - 6) > 1e-4) throw new Error(`w(0.25) should be 6, got ${w025}`);
@@ -286,7 +292,44 @@ try {
         process.exit(1);
     }
 
-    process.exit(0);
+    // --- 追加テスト4：サムネイル生成 & Blob 保存のテスト ---
+    sandbox.state.currentDrawId = 'd_test';
+    sandbox.state.drawingName = 'Test Save';
+    
+    // Mock DB
+    let putCalled = false;
+    let putData = null;
+    sandbox.mockDb = {
+        transaction: () => ({
+            objectStore: () => ({
+                put: async (data) => {
+                    putCalled = true;
+                    putData = data;
+                }
+            })
+        })
+    };
+    vm.runInContext("db = mockDb;", sandbox);
+
+    vm.runInContext("saveDrawing()", sandbox).then(() => {
+        if (!putCalled) {
+            console.error('❌ test_node.js: saveDrawing thumbnail Blob test failed! db.put was not called');
+            process.exit(1);
+        }
+        if (putData.name !== 'Test Save') {
+            console.error(`❌ test_node.js: saveDrawing thumbnail Blob test failed! Expected saved name to be 'Test Save', got ${putData.name}`);
+            process.exit(1);
+        }
+        if (!(putData.preview instanceof sandbox.Blob)) {
+            console.error('❌ test_node.js: saveDrawing thumbnail Blob test failed! Expected preview to be a Blob');
+            process.exit(1);
+        }
+        console.log('✅ test_node.js: saveDrawing thumbnail Blob test passed!');
+        process.exit(0);
+    }).catch(err => {
+        console.error('❌ test_node.js: saveDrawing thumbnail Blob test failed!', err);
+        process.exit(1);
+    });
 } catch (err) {
     console.error('❌ test_node.js: N-Wrap test failed!', err);
     process.exit(1);

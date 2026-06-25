@@ -122,121 +122,121 @@ const MDMath = {
         const dx = 3 * mt ** 2 * ((p[1].x || 0) - (p[0].x || 0)) + 6 * mt * t * ((p[2].x || 0) - (p[1].x || 0)) + 3 * t ** 2 * ((p[3].x || 0) - (p[2].x || 0));
         const dy = 3 * mt ** 2 * ((p[1].y || 0) - (p[0].y || 0)) + 6 * mt * t * ((p[2].y || 0) - (p[1].y || 0)) + 3 * t ** 2 * ((p[3].y || 0) - (p[2].y || 0));
         return { dx, dy };
+    },
+
+    getShapeThickness: (shape, t) => {
+        const data = shape.strokeWidthData || [{ t: 0, w: 10 }, { t: 1, w: 10 }];
+        if (data.length === 0) return 10;
+        if (data.length === 1) return data[0].w;
+        
+        if (t <= data[0].t) return data[0].w;
+        if (t >= data[data.length - 1].t) return data[data.length - 1].w;
+        
+        for (let i = 0; i < data.length - 1; i++) {
+            const p1 = data[i];
+            const p2 = data[i+1];
+            if (t >= p1.t && t <= p2.t) {
+                const ratio = (t - p1.t) / (p2.t - p1.t);
+                return p1.w + ratio * (p2.w - p1.w);
+            }
+        }
+        return data[data.length - 1].w;
+    },
+
+    generateOutlinePathPoints: (shape, beziers) => {
+        // MEMO: 太さ0の範囲については、計算誤差でわずかにかすれた線が見える場合がありますが、追々、ブラシ機能を拡充するときに最適化などを検討します。
+        const leftPoints = [];
+        const rightPoints = [];
+        const N = shape.bezierIds ? shape.bezierIds.length : 0;
+        if (N === 0) return { leftPoints, rightPoints };
+        
+        for (let i = 0; i < N; i++) {
+            const bid = shape.bezierIds[i];
+            const bez = beziers[bid];
+            if (!bez) continue;
+            
+            const ts = Object.keys(bez.samplePointByT || {}).map(Number).sort((a, b) => a - b);
+            if (ts.length === 0) {
+                ts.push(0, 1);
+            }
+            
+            ts.forEach((tLocal) => {
+                const tGlobal = (i + tLocal) / N;
+                const p = (bez.samplePointByT && bez.samplePointByT[tLocal]) || MDMath.getPoint(bez, tLocal);
+                
+                let tangent = MDMath.getTangent(bez, tLocal);
+                let len = Math.hypot(tangent.dx, tangent.dy);
+                if (len < 1e-6) {
+                    const t2 = tLocal < 0.5 ? tLocal + 0.001 : tLocal - 0.001;
+                    tangent = MDMath.getTangent(bez, t2);
+                    len = Math.hypot(tangent.dx, tangent.dy);
+                }
+                
+                let nx = 0, ny = 0;
+                if (len > 1e-6) {
+                    nx = -tangent.dy / len;
+                    ny = tangent.dx / len;
+                }
+                
+                const w = MDMath.getShapeThickness(shape, tGlobal);
+                const r = w / 2;
+                
+                leftPoints.push({ x: p.x + nx * r, y: p.y + ny * r });
+                rightPoints.push({ x: p.x - nx * r, y: p.y - ny * r });
+            });
+        }
+        return { leftPoints, rightPoints };
+    },
+
+    getOutlinePathD: (shape, beziers) => {
+        const { leftPoints, rightPoints } = MDMath.generateOutlinePathPoints(shape, beziers);
+        if (leftPoints.length === 0) return '';
+        
+        let d = '';
+        d += `M ${leftPoints[0].x},${leftPoints[0].y}`;
+        for (let i = 1; i < leftPoints.length; i++) {
+            d += ` L ${leftPoints[i].x},${leftPoints[i].y}`;
+        }
+        for (let i = rightPoints.length - 1; i >= 0; i--) {
+            d += ` L ${rightPoints[i].x},${rightPoints[i].y}`;
+        }
+        d += ' Z';
+        return d;
+    },
+
+    getShapePointAndNormal: (shape, t, beziers) => {
+        const N = shape.bezierIds ? shape.bezierIds.length : 0;
+        if (N === 0) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
+        
+        t = Math.max(0, Math.min(1, t));
+        
+        let i = Math.floor(t * N);
+        if (i >= N) i = N - 1;
+        const tLocal = t * N - i;
+        
+        const bid = shape.bezierIds[i];
+        const bez = beziers[bid];
+        if (!bez) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
+        
+        const p = MDMath.getPoint(bez, tLocal);
+        
+        let tangent = MDMath.getTangent(bez, tLocal);
+        let len = Math.hypot(tangent.dx, tangent.dy);
+        if (len < 1e-6) {
+            const t2 = tLocal < 0.5 ? tLocal + 0.001 : tLocal - 0.001;
+            tangent = MDMath.getTangent(bez, t2);
+            len = Math.hypot(tangent.dx, tangent.dy);
+        }
+        
+        let nx = 0, ny = 0;
+        if (len > 1e-6) {
+            nx = -tangent.dy / len;
+            ny = tangent.dx / len;
+        }
+        
+        return { p, nx, ny };
     }
 };
-
-function getShapeThickness(shape, t) {
-    const data = shape.strokeWidthData || [{ t: 0, w: 10 }, { t: 1, w: 10 }];
-    if (data.length === 0) return 10;
-    if (data.length === 1) return data[0].w;
-    
-    if (t <= data[0].t) return data[0].w;
-    if (t >= data[data.length - 1].t) return data[data.length - 1].w;
-    
-    for (let i = 0; i < data.length - 1; i++) {
-        const p1 = data[i];
-        const p2 = data[i+1];
-        if (t >= p1.t && t <= p2.t) {
-            const ratio = (t - p1.t) / (p2.t - p1.t);
-            return p1.w + ratio * (p2.w - p1.w);
-        }
-    }
-    return data[data.length - 1].w;
-}
-
-function generateOutlinePathPoints(shape) {
-    // MEMO: 太さ0の範囲については、計算誤差でわずかにかすれた線が見える場合がありますが、追々、ブラシ機能を拡充するときに最適化などを検討します。
-    const leftPoints = [];
-    const rightPoints = [];
-    const N = shape.bezierIds ? shape.bezierIds.length : 0;
-    if (N === 0) return { leftPoints, rightPoints };
-    
-    for (let i = 0; i < N; i++) {
-        const bid = shape.bezierIds[i];
-        const bez = state.beziers[bid];
-        if (!bez) continue;
-        
-        const ts = Object.keys(bez.samplePointByT || {}).map(Number).sort((a, b) => a - b);
-        if (ts.length === 0) {
-            ts.push(0, 1);
-        }
-        
-        ts.forEach((tLocal) => {
-            const tGlobal = (i + tLocal) / N;
-            const p = (bez.samplePointByT && bez.samplePointByT[tLocal]) || MDMath.getPoint(bez, tLocal);
-            
-            let tangent = MDMath.getTangent(bez, tLocal);
-            let len = Math.hypot(tangent.dx, tangent.dy);
-            if (len < 1e-6) {
-                const t2 = tLocal < 0.5 ? tLocal + 0.001 : tLocal - 0.001;
-                tangent = MDMath.getTangent(bez, t2);
-                len = Math.hypot(tangent.dx, tangent.dy);
-            }
-            
-            let nx = 0, ny = 0;
-            if (len > 1e-6) {
-                nx = -tangent.dy / len;
-                ny = tangent.dx / len;
-            }
-            
-            const w = getShapeThickness(shape, tGlobal);
-            const r = w / 2;
-            
-            leftPoints.push({ x: p.x + nx * r, y: p.y + ny * r });
-            rightPoints.push({ x: p.x - nx * r, y: p.y - ny * r });
-        });
-    }
-    return { leftPoints, rightPoints };
-}
-
-function getOutlinePathD(shape) {
-    const { leftPoints, rightPoints } = generateOutlinePathPoints(shape);
-    if (leftPoints.length === 0) return '';
-    
-    let d = '';
-    d += `M ${leftPoints[0].x},${leftPoints[0].y}`;
-    for (let i = 1; i < leftPoints.length; i++) {
-        d += ` L ${leftPoints[i].x},${leftPoints[i].y}`;
-    }
-    for (let i = rightPoints.length - 1; i >= 0; i--) {
-        d += ` L ${rightPoints[i].x},${rightPoints[i].y}`;
-    }
-    d += ' Z';
-    return d;
-}
-
-function getShapePointAndNormal(shape, t) {
-    const N = shape.bezierIds ? shape.bezierIds.length : 0;
-    if (N === 0) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
-    
-    t = Math.max(0, Math.min(1, t));
-    
-    let i = Math.floor(t * N);
-    if (i >= N) i = N - 1;
-    const tLocal = t * N - i;
-    
-    const bid = shape.bezierIds[i];
-    const bez = state.beziers[bid];
-    if (!bez) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
-    
-    const p = MDMath.getPoint(bez, tLocal);
-    
-    let tangent = MDMath.getTangent(bez, tLocal);
-    let len = Math.hypot(tangent.dx, tangent.dy);
-    if (len < 1e-6) {
-        const t2 = tLocal < 0.5 ? tLocal + 0.001 : tLocal - 0.001;
-        tangent = MDMath.getTangent(bez, t2);
-        len = Math.hypot(tangent.dx, tangent.dy);
-    }
-    
-    let nx = 0, ny = 0;
-    if (len > 1e-6) {
-        nx = -tangent.dy / len;
-        ny = tangent.dx / len;
-    }
-    
-    return { p, nx, ny };
-}
 
 function initializeIdCounter() {
     const allIds = [...Object.keys(state.shapes), ...Object.keys(state.beziers)];
@@ -635,7 +635,7 @@ function handleWSlideThicknessStart() {
     if (closestIndex >= 0) {
         state.thicknessEdit.editIndex = closestIndex;
     } else {
-        const currentW = getShapeThickness(shape, targetT);
+        const currentW = MDMath.getShapeThickness(shape, targetT);
         const newPoint = { t: targetT, w: currentW };
         shape.strokeWidthData.push(newPoint);
         shape.strokeWidthData.sort((a, b) => a.t - b.t);
@@ -1754,21 +1754,28 @@ function renderCanvas() {
         renderShape(activeLayerId, viewport, defs);
     }
 
+    // アクティブレイヤーをリアルタイムに activeOffscreen に描画
+    if (activeLayerId && state.canvas.activeOffscreen) {
+        const activeCtx = state.canvas.activeOffscreen.getContext('2d');
+        activeCtx.clearRect(0, 0, state.canvas.width, state.canvas.height);
+        drawShapeToCanvasContext(activeCtx, activeLayerId);
+    }
+
     // under-canvas / over-canvas にそれぞれオフスクリーンから転写
     const underCanvas = document.getElementById('under-canvas');
     const overCanvas = document.getElementById('over-canvas');
     if (underCanvas && state.canvas.underOffscreen) {
-        drawOffscreenToOnscreen(underCanvas, state.canvas.underOffscreen);
+        drawOffscreensToOnscreen(underCanvas, [state.canvas.underOffscreen, state.canvas.activeOffscreen]);
     }
     if (overCanvas && state.canvas.overOffscreen) {
-        drawOffscreenToOnscreen(overCanvas, state.canvas.overOffscreen);
+        drawOffscreensToOnscreen(overCanvas, [state.canvas.overOffscreen]);
     }
 
     renderMinimap();
     renderLayerList();
 } /* renderCanvas */
 
-function drawOffscreenToOnscreen(onscreen, offscreen) {
+function drawOffscreensToOnscreen(onscreen, offscreens) {
     const ctx = onscreen.getContext('2d');
     const rect = onscreen.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -1787,7 +1794,11 @@ function drawOffscreenToOnscreen(onscreen, offscreen) {
     ctx.scale(state.zoom, state.zoom);
     ctx.rotate(state.rotation * Math.PI / 180);
 
-    ctx.drawImage(offscreen, 0, 0);
+    offscreens.forEach(offscreen => {
+        if (offscreen) {
+            ctx.drawImage(offscreen, 0, 0);
+        }
+    });
     ctx.restore();
 }
 
@@ -1843,7 +1854,7 @@ function drawShapeToCanvasContext(ctx, shapeId) {
         }
 
         if (outlineEnabled) {
-            const { leftPoints, rightPoints } = generateOutlinePathPoints(shape);
+            const { leftPoints, rightPoints } = MDMath.generateOutlinePathPoints(shape, state.beziers);
             if (leftPoints.length > 0) {
                 ctx.beginPath();
                 ctx.moveTo(leftPoints[0].x, leftPoints[0].y);
@@ -1948,41 +1959,6 @@ function renderShape(id, container, defs, isMinimap = false) {
             renderShape(src.id, cloneG, defs, isMinimap); g.appendChild(cloneG);
         }
     } else if (shape.bezierIds) {
-        const fillEnabled = shape.style?.fillEnabled !== false;
-        const outlineEnabled = shape.style?.outline !== false;
-
-        // 1. 塗り (fillEnabled が ON の場合)
-        if (fillEnabled) {
-            const fillPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            let d = '';
-            shape.bezierIds.forEach((bid, i) => {
-                const b = state.beziers[bid];
-                if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
-                const v = b.controlPoints.map(cp => cp.v);
-                if (i === 0) d += `M ${v[0].x},${v[0].y}`;
-                d += ` C ${v[1].x},${v[1].y} ${v[2].x},${v[2].y} ${v[3].x},${v[3].y}`;
-            });
-            d += ' Z';
-            fillPath.setAttribute('d', d);
-            fillPath.setAttribute('fill', shape.style.fill || '#000000');
-            fillPath.setAttribute('fill-opacity', shape.style.opacity ?? 1);
-            fillPath.setAttribute('stroke', 'none');
-            g.appendChild(fillPath);
-        }
-
-        // 2. 動的な太さの輪郭 (outlineEnabled が ON の場合)
-        if (outlineEnabled) {
-            const outlineD = getOutlinePathD(shape);
-            if (outlineD) {
-                const outlinePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                outlinePath.setAttribute('d', outlineD);
-                outlinePath.setAttribute('fill', shape.style.fill || '#000000');
-                outlinePath.setAttribute('fill-opacity', shape.style.opacity ?? 1);
-                outlinePath.setAttribute('stroke', 'none');
-                g.appendChild(outlinePath);
-            }
-        }
-
         // 3. ガイド線 (メインSVG描画かつ isMinimap でない場合のみ表示)
         if (!isMinimap) {
             const guidePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -2060,7 +2036,7 @@ function renderShape(id, container, defs, isMinimap = false) {
             // (a) 既存データポイントの描画
             if (shape.strokeWidthData) {
                 shape.strokeWidthData.forEach((ptData) => {
-                    const { p, nx, ny } = getShapePointAndNormal(shape, ptData.t);
+                    const { p, nx, ny } = MDMath.getShapePointAndNormal(shape, ptData.t, state.beziers);
                     const r = ptData.w / 2;
                     
                     // 幅を示す線 (黄色)
@@ -2082,8 +2058,8 @@ function renderShape(id, container, defs, isMinimap = false) {
             
             // (b) 現在狙っている targetT のインジケータ
             const targetT = state.thicknessEdit.targetT;
-            const { p, nx, ny } = getShapePointAndNormal(shape, targetT);
-            const w = getShapeThickness(shape, targetT);
+            const { p, nx, ny } = MDMath.getShapePointAndNormal(shape, targetT, state.beziers);
+            const w = MDMath.getShapeThickness(shape, targetT);
             const r = w / 2;
             
             // 現在の幅を示す線 (赤)
@@ -2138,18 +2114,33 @@ function switchView(viewId) {
 
 async function saveDrawing() {
     if (!state.currentDrawId || !db) return;
-    const svgEl = document.getElementById('main-svg');
-    
-    // プレビュー用に複製し viewBox 属性を追加することで、アスペクト比を維持して全体表示できるようにする
-    const clonedSvg = svgEl.cloneNode(true);
-    const rect = svgEl.getBoundingClientRect();
-    const width = rect.width || 800;
-    const height = rect.height || 600;
-    clonedSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
-    const serializer = new XMLSerializer();
-    const svgString = serializer.serializeToString(clonedSvg);
-    const preview = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
+    // 1. 512x512 のテンポラリ Canvas を作成し、ハンドル類を含まない純粋なイラスト画像を合成
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = 512;
+    tempCanvas.height = 512;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.clearRect(0, 0, 512, 512);
+
+    // アクティブレイヤーを最新状態で activeOffscreen に描画
+    const activeLayerId = state.selectedLayerId;
+    if (activeLayerId && state.canvas.activeOffscreen) {
+        const activeCtx = state.canvas.activeOffscreen.getContext('2d');
+        activeCtx.clearRect(0, 0, state.canvas.width, state.canvas.height);
+        drawShapeToCanvasContext(activeCtx, activeLayerId);
+    }
+
+    // under, active, over の各オフスクリーンを重ねて 512x512 に縮小描画
+    [state.canvas.underOffscreen, state.canvas.activeOffscreen, state.canvas.overOffscreen].forEach(offscreen => {
+        if (offscreen) {
+            tempCtx.drawImage(offscreen, 0, 0, offscreen.width, offscreen.height, 0, 0, 512, 512);
+        }
+    });
+
+    // Canvas から PNG Blob を生成
+    const previewBlob = await new Promise((resolve) => {
+        tempCanvas.toBlob((blob) => resolve(blob), 'image/png');
+    });
 
     const tx = db.transaction('drawings', 'readwrite');
     const store = tx.objectStore('drawings');
@@ -2165,7 +2156,7 @@ async function saveDrawing() {
         shapes: cleaned.shapes,
         beziers: cleaned.beziers,
         scene: cleaned.scene,
-        preview: preview,
+        preview: previewBlob, // Blob オブジェクトを直接保存
         updatedAt: Date.now()
     });
 } /* saveDrawing */
@@ -2189,15 +2180,34 @@ function loadGallery() {
     };
 } /* loadGallery */
 
+let activeGalleryUrls = [];
+
 function renderGalleryGrid(items) {
     const list = document.getElementById('gallery-list');
+    
+    // 古いオブジェクトURLを解放してメモリリークを防ぐ
+    activeGalleryUrls.forEach(url => URL.revokeObjectURL(url));
+    activeGalleryUrls = [];
+
     list.innerHTML = '';
     items.sort((a, b) => b.updatedAt - a.updatedAt).forEach(item => {
         const card = document.createElement('div');
         card.className = 'gallery-card';
+        
+        let imgSrc = '';
+        if (item.preview) {
+            if (item.preview instanceof Blob) {
+                imgSrc = URL.createObjectURL(item.preview);
+                activeGalleryUrls.push(imgSrc);
+            } else {
+                // 過去データ（Base64/SVG文字列）との後方互換性維持
+                imgSrc = item.preview;
+            }
+        }
+
         card.innerHTML = `
             <div class="card-preview">
-                ${item.preview ? `<img src="${item.preview}" alt="preview">` : ''}
+                ${imgSrc ? `<img src="${imgSrc}" alt="preview">` : ''}
             </div>
             <div class="card-info">
                 <span>${item.name || ('Drawing ' + item.id)}</span>
