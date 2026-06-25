@@ -200,6 +200,39 @@ function getOutlinePathD(shape) {
     return d;
 }
 
+function getShapePointAndNormal(shape, t) {
+    const N = shape.bezierIds ? shape.bezierIds.length : 0;
+    if (N === 0) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
+    
+    t = Math.max(0, Math.min(1, t));
+    
+    let i = Math.floor(t * N);
+    if (i >= N) i = N - 1;
+    const tLocal = t * N - i;
+    
+    const bid = shape.bezierIds[i];
+    const bez = state.beziers[bid];
+    if (!bez) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
+    
+    const p = MDMath.getPoint(bez, tLocal);
+    
+    let tangent = MDMath.getTangent(bez, tLocal);
+    let len = Math.hypot(tangent.dx, tangent.dy);
+    if (len < 1e-6) {
+        const t2 = tLocal < 0.5 ? tLocal + 0.001 : tLocal - 0.001;
+        tangent = MDMath.getTangent(bez, t2);
+        len = Math.hypot(tangent.dx, tangent.dy);
+    }
+    
+    let nx = 0, ny = 0;
+    if (len > 1e-6) {
+        nx = -tangent.dy / len;
+        ny = tangent.dx / len;
+    }
+    
+    return { p, nx, ny };
+}
+
 function initializeIdCounter() {
     const allIds = [...Object.keys(state.shapes), ...Object.keys(state.beziers)];
     const max = Math.max(0, ...allIds.map(id => {
@@ -2015,6 +2048,58 @@ function renderShape(id, container, defs, isMinimap = false) {
                     g.appendChild(cInner);
                 }
             }
+        }
+
+        // 4. 太さ編集モードのインジケータ表示
+        if (!isMinimap && state.thicknessEdit.active && state.selectedShapeIds.includes(shape.id)) {
+            // (a) 既存データポイントの描画
+            if (shape.strokeWidthData) {
+                shape.strokeWidthData.forEach((ptData) => {
+                    const { p, nx, ny } = getShapePointAndNormal(shape, ptData.t);
+                    const r = ptData.w / 2;
+                    
+                    // 幅を示す線 (黄色)
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    line.setAttribute('x1', p.x - nx * r); line.setAttribute('y1', p.y - ny * r);
+                    line.setAttribute('x2', p.x + nx * r); line.setAttribute('y2', p.y + ny * r);
+                    line.setAttribute('stroke', '#ffeb3b');
+                    line.setAttribute('stroke-width', 2);
+                    g.appendChild(line);
+                    
+                    // 座標点 (黄色円)
+                    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    c.setAttribute('cx', p.x); c.setAttribute('cy', p.y); c.setAttribute('r', 4);
+                    c.setAttribute('fill', 'white'); c.setAttribute('stroke', '#ffeb3b');
+                    c.setAttribute('stroke-width', 1.5);
+                    g.appendChild(c);
+                });
+            }
+            
+            // (b) 現在狙っている targetT のインジケータ
+            const targetT = state.thicknessEdit.targetT;
+            const { p, nx, ny } = getShapePointAndNormal(shape, targetT);
+            const w = getShapeThickness(shape, targetT);
+            const r = w / 2;
+            
+            // 現在の幅を示す線 (赤)
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', p.x - nx * r); line.setAttribute('y1', p.y - ny * r);
+            line.setAttribute('x2', p.x + nx * r); line.setAttribute('y2', p.y + ny * r);
+            line.setAttribute('stroke', '#f44336');
+            line.setAttribute('stroke-width', 2.5);
+            g.appendChild(line);
+            
+            // 狙う位置の点 (赤色二重円)
+            const cOuter = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            cOuter.setAttribute('cx', p.x); cOuter.setAttribute('cy', p.y); cOuter.setAttribute('r', 6);
+            cOuter.setAttribute('fill', 'none'); cOuter.setAttribute('stroke', '#f44336');
+            cOuter.setAttribute('stroke-width', 1.5);
+            g.appendChild(cOuter);
+            
+            const cInner = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            cInner.setAttribute('cx', p.x); cInner.setAttribute('cy', p.y); cInner.setAttribute('r', 3);
+            cInner.setAttribute('fill', '#f44336');
+            g.appendChild(cInner);
         }
     } /* shape.bezierIds */
     container.appendChild(g);
