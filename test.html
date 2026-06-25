@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coons Patch WebGL deformation prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f111a;
+            --panel-bg: #1a1d2e;
+            --accent-color: #00e5ff;
+            --accent-hover: #00b8d4;
+            --text-color: #e2e8f0;
+            --text-muted: #94a3b8;
+            --border-color: #2a2f4c;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            background-color: var(--panel-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            background: linear-gradient(45deg, #00e5ff, #0084ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 0.2rem;
+        }
+
+        main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 2rem;
+            padding: 2rem;
+            max-width: 1600px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* Sidebar Control Panel */
+        .sidebar {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            height: fit-content;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-color);
+            border-left: 3px solid var(--accent-color);
+            padding-left: 0.5rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+
+        label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .btn {
+            background-color: #252a42;
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover {
+            background-color: #313754;
+            border-color: var(--text-muted);
+        }
+
+        .btn-primary {
+            background-color: var(--accent-color);
+            color: #000;
+            font-weight: 600;
+            border: none;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--accent-hover);
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: #20243b;
+            padding: 0.75rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 22px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #4a5568;
+            transition: .3s;
+            border-radius: 22px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px; width: 16px;
+            left: 3px; bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--accent-color);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+
+        /* Workspace Grid */
+        .workspace {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .canvas-container {
+            position: relative;
+            background-color: #151827;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            width: 800px;
+            height: 800px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            overflow: hidden;
+            margin: 0 auto;
+        }
+
+        /* Stack WebGL canvas & SVG Overlay */
+        #webgl-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #svg-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: auto;
+        }
+
+        /* SVG Vector Handles and Lines */
+        .boundary-line {
+            fill: none;
+            stroke: var(--accent-color);
+            stroke-width: 2px;
+            stroke-dasharray: 4, 4;
+            opacity: 0.8;
+            pointer-events: none;
+        }
+
+        .control-line {
+            fill: none;
+            stroke: #4a5568;
+            stroke-width: 1px;
+            stroke-dasharray: 2, 2;
+            pointer-events: none;
+        }
+
+        .handle {
+            cursor: pointer;
+            transition: r 0.15s ease, fill 0.15s ease;
+        }
+
+        .handle.corner {
+            fill: #ffffff;
+            stroke: var(--accent-color);
+            stroke-width: 2px;
+        }
+
+        .handle.corner:hover {
+            r: 10px;
+            fill: var(--accent-color);
+        }
+
+        .handle.control {
+            fill: #2d3748;
+            stroke: #a0aec0;
+            stroke-width: 1.5px;
+        }
+
+        .handle.control:hover {
+            r: 7px;
+            fill: #a0aec0;
+        }
+
+        .handle.active {
+            r: 11px;
+            fill: #ffeb3b !important;
+            stroke: #ff9800 !important;
+        }
+
+        /* Instructions block */
+        .info-card {
+            background-color: #1a1d2e;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .info-card code {
+            background-color: #2b304a;
+            color: var(--accent-color);
+            padding: 0.1rem 0.3rem;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>Coons Patch WebGL Warp Prototype</h1>
+            <div class="subtitle">GPU-accelerated envelope leaf warp mockup</div>
+        </div>
+        <div class="info-card">
+            ドラッグして葉の輪郭（ベジェ4本）を変形できます
+        </div>
+    </header>
+
+    <main>
+        <div class="sidebar">
+            <div class="control-group">
+                <div class="section-title">テクスチャ選択</div>
+                <button id="btn-tex-leaf" class="btn btn-primary">🍃 葉の画像 (sample.png)</button>
+                <button id="btn-tex-checker" class="btn">🏁 チェッカー格子パターン</button>
+            </div>
+
+            <div class="control-group">
+                <div class="section-title">表示設定</div>
+                <div class="toggle-container">
+                    <label for="switch-grid">メッシュ格子を描画</label>
+                    <label class="switch">
+                        <input type="checkbox" id="switch-grid" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-container">
+                    <label for="switch-svg">ハンドル・境界線を表示</label>
+                    <label class="switch">
+                        <input type="checkbox" id="switch-svg" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="section-title">アクション</div>
+                <button id="btn-reset" class="btn">🔄 形状を初期化</button>
+            </div>
+            
+            <div class="info-card">
+                <strong>クーンズ面（Coons Patch）</strong>:<br>
+                対向する2組の境界曲線（計4本）を線形ブレンドして作成される補間曲面です。
+                このプロトタイプでは、頂点シェーダー内で各UV座標における曲面位置をリアルタイムに計算しています。
+            </div>
+        </div>
+
+        <div class="workspace">
+            <div class="canvas-container">
+                <canvas id="webgl-canvas" width="800" height="800"></canvas>
+                <svg id="svg-overlay" viewBox="0 0 800 800" width="800" height="800">
+                    <!-- Helper connecting lines -->
+                    <line id="line-P0-C1_1" class="control-line"></line>
+                    <line id="line-P1-C1_2" class="control-line"></line>
+                    <line id="line-P1-C2_1" class="control-line"></line>
+                    <line id="line-P2-C2_2" class="control-line"></line>
+                    <line id="line-P2-C3_1" class="control-line"></line>
+                    <line id="line-P3-C3_2" class="control-line"></line>
+                    <line id="line-P3-C4_1" class="control-line"></line>
+                    <line id="line-P0-C4_2" class="control-line"></line>
+
+                    <!-- Boundary path curves -->
+                    <path id="path-curve1" class="boundary-line"></path>
+                    <path id="path-curve2" class="boundary-line"></path>
+                    <path id="path-curve3" class="boundary-line"></path>
+                    <path id="path-curve4" class="boundary-line"></path>
+                </svg>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Default control points mapping from the SVG path
+        const DEFAULT_POINTS = {
+            P0: { x: 548.79296875, y: 478.0078125 },
+            P1: { x: 659.77734375, y: 313.37109375 },
+            P2: { x: 559.77734375, y: 313.37109375 },
+            P3: { x: 448.79296875, y: 478.0078125 },
+
+            C1_1: { x: 548.79296875, y: 451.37517485678245 },
+            C1_2: { x: 659.77734375, y: 369.0957620630263 },
+
+            C2_1: { x: 659.77734375, y: 268.68133362207357 },
+            C2_2: { x: 559.77734375, y: 259.5233306414775 },
+
+            C3_1: { x: 559.77734375, y: 362.0735477634173 },
+            C3_2: { x: 448.79296875, y: 426.3929193761458 },
+
+            C4_1: { x: 448.79296875, y: 537.9069768713192 },
+            C4_2: { x: 548.79296875, y: 510.2388053221685 }
+        };
+
+        // Current state points
+        let points = JSON.parse(JSON.stringify(DEFAULT_POINTS));
+
+        // WebGL Setup
+        const canvas = document.getElementById('webgl-canvas');
+        const gl = canvas.getContext('webgl', { alpha: true, antialias: true });
+
+        if (!gl) {
+            alert('Unable to initialize WebGL. Your browser or machine may not support it.');
+        }
+
+        // Shaders Sources
+        const vsSource = `
+            attribute vec2 a_texCoord;
+            
+            uniform vec2 u_curve0[4]; // bottom boundary: C0(u)
+            uniform vec2 u_curve1[4]; // top boundary: C1(u)
+            uniform vec2 u_curve2[4]; // left boundary: D0(v)
+            uniform vec2 u_curve3[4]; // right boundary: D1(v)
+            
+            uniform vec2 u_resolution;
+            varying vec2 v_texCoord;
+
+            // Evaluates a cubic bezier curve at parameter t
+            vec2 evaluateBezier(vec2 p[4], float t) {
+                float mt = 1.0 - t;
+                return mt * mt * mt * p[0] +
+                       3.0 * mt * mt * t * p[1] +
+                       3.0 * mt * t * t * p[2] +
+                       t * t * t * p[3];
+            }
+
+            void main() {
+                float u = a_texCoord.x;
+                float v = a_texCoord.y;
+
+                // Evaluate boundary curves
+                vec2 C0 = evaluateBezier(u_curve0, u);
+                vec2 C1 = evaluateBezier(u_curve1, 1.0 - u);
+                vec2 D0 = evaluateBezier(u_curve2, 1.0 - v);
+                vec2 D1 = evaluateBezier(u_curve3, v);
+
+                // Corner points corresponding to the boundaries
+                vec2 p00 = u_curve0[0]; // P3
+                vec2 p10 = u_curve0[3]; // P0
+                vec2 p01 = u_curve1[3]; // P2
+                vec2 p11 = u_curve1[0]; // P1
+
+                // Bilinear patch correction
+                vec2 bilinear = (1.0 - u) * (1.0 - v) * p00 +
+                                u * (1.0 - v) * p10 +
+                                (1.0 - u) * v * p01 +
+                                u * v * p11;
+
+                // Coons Patch Formula
+                vec2 p_deformed = (1.0 - v) * C0 + v * C1 + (1.0 - u) * D0 + u * D1 - bilinear;
+
+                // Map canvas space to clip space [-1.0, 1.0]
+                vec2 zeroToOne = p_deformed / u_resolution;
+                vec2 zeroToTwo = zeroToOne * 2.0;
+                vec2 clipSpace = zeroToTwo - 1.0;
+
+                // Flip Y to match standard SVG orientation
+                gl_Position = vec4(clipSpace * vec2(1.0, -1.0), 0.0, 1.0);
+                v_texCoord = a_texCoord;
+            }
+        `;
+
+        const fsSource = `
+            precision mediump float;
+            varying vec2 v_texCoord;
+            uniform sampler2D u_texture;
+            uniform float u_showGrid;
+
+            void main() {
+                vec4 texColor = texture2D(u_texture, v_texCoord);
+                
+                if (u_showGrid > 0.5) {
+                    // Compute dynamic grid overlay inside the fragment shader
+                    float gridU = abs(fract(v_texCoord.x * 20.0 - 0.5) - 0.5) / (20.0 * 0.03);
+                    float gridV = abs(fract(v_texCoord.y * 20.0 - 0.5) - 0.5) / (20.0 * 0.03);
+                    float lineU = step(gridU, 0.08);
+                    float lineV = step(gridV, 0.08);
+                    float lineVal = max(lineU, lineV);
+                    
+                    vec4 gridColor = vec4(0.0, 0.9, 1.0, 0.65);
+                    gl_FragColor = mix(texColor, gridColor, lineVal * 0.4);
+                } else {
+                    gl_FragColor = texColor;
+                }
+            }
+        `;
+
+        // Shader helper
+        function initShaderProgram(gl, vsSource, fsSource) {
+            const vs = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vs, vsSource);
+            gl.compileShader(vs);
+            if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+                console.error('Vertex shader compile error:', gl.getShaderInfoLog(vs));
+            }
+
+            const fs = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fs, fsSource);
+            gl.compileShader(fs);
+            if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+                console.error('Fragment shader compile error:', gl.getShaderInfoLog(fs));
+            }
+
+            const program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Shader link error:', gl.getProgramInfoLog(program));
+            }
+            return program;
+        }
+
+        const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
+        gl.useProgram(shaderProgram);
+
+        // Grid parameters (Forward UV mesh resolution)
+        const GRID_SIZE = 64;
+        const vertices = [];
+        const indices = [];
+
+        // Generate static UV coordinates
+        for (let j = 0; j <= GRID_SIZE; j++) {
+            for (let i = 0; i <= GRID_SIZE; i++) {
+                vertices.push(i / GRID_SIZE, j / GRID_SIZE);
+            }
+        }
+
+        // Generate triangles indices
+        for (let j = 0; j < GRID_SIZE; j++) {
+            for (let i = 0; i < GRID_SIZE; i++) {
+                const p0 = j * (GRID_SIZE + 1) + i;
+                const p1 = p0 + 1;
+                const p2 = (j + 1) * (GRID_SIZE + 1) + i;
+                const p3 = p2 + 1;
+                
+                indices.push(p0, p1, p2);
+                indices.push(p2, p1, p3);
+            }
+        }
+
+        // Buffer initialization
+        const vertexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+        const indexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+
+        // Attribute bindings
+        const aTexCoord = gl.getAttribLocation(shaderProgram, 'a_texCoord');
+        gl.enableVertexAttribArray(aTexCoord);
+        gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 0, 0);
+
+        // Uniform locations
+        const uResolution = gl.getUniformLocation(shaderProgram, 'u_resolution');
+        const uShowGrid = gl.getUniformLocation(shaderProgram, 'u_showGrid');
+        const uCurve0 = gl.getUniformLocation(shaderProgram, 'u_curve0');
+        const uCurve1 = gl.getUniformLocation(shaderProgram, 'u_curve1');
+        const uCurve2 = gl.getUniformLocation(shaderProgram, 'u_curve2');
+        const uCurve3 = gl.getUniformLocation(shaderProgram, 'u_curve3');
+
+        gl.uniform2f(uResolution, 800.0, 800.0);
+
+        // Load Textures
+        let activeTexture = null;
+        let leafTexture = null;
+        let checkerboardTexture = null;
+
+        function createCheckerboardTexture(gl) {
+            const size = 512;
+            const data = new Uint8Array(size * size * 4);
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const idx = (y * size + x) * 4;
+                    const check = ((Math.floor(x / 32) + Math.floor(y / 32)) % 2) === 0;
+                    const val = check ? 255 : 180;
+                    const r = check ? 255 : 200;
+                    const g = check ? 255 : 220;
+                    // soft gray-blue grid
+                    data[idx] = r - 50;
+                    data[idx+1] = g - 20;
+                    data[idx+2] = val;
+                    data[idx+3] = 255;
+                }
+            }
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            return texture;
+        }
+
+        function loadTexture(gl, url) {
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            
+            // Temporary single pixel loader (semi-transparent teal)
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 150, 150, 255]));
+
+            const image = new Image();
+            image.onload = () => {
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                render();
+            };
+            image.src = url;
+            return texture;
+        }
+
+        // Initialize textures
+        leafTexture = loadTexture(gl, 'image/sample.png');
+        checkerboardTexture = createCheckerboardTexture(gl);
+        activeTexture = leafTexture;
+
+        // Render pass
+        function render() {
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.clearColor(0.08, 0.09, 0.15, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // Enable blending for transparency
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+            // Send grid checkbox uniform
+            const showGrid = document.getElementById('switch-grid').checked ? 1.0 : 0.0;
+            gl.uniform1f(uShowGrid, showGrid);
+
+            // Curve 4 (P3 -> P0)
+            uploadCurveUniform(uCurve0, [points.P3, points.C4_1, points.C4_2, points.P0]);
+            // Curve 2 (P1 -> P2)
+            uploadCurveUniform(uCurve1, [points.P1, points.C2_1, points.C2_2, points.P2]);
+            // Curve 3 (P2 -> P3)
+            uploadCurveUniform(uCurve2, [points.P2, points.C3_1, points.C3_2, points.P3]);
+            // Curve 1 (P0 -> P1)
+            uploadCurveUniform(uCurve3, [points.P0, points.C1_1, points.C1_2, points.P1]);
+
+            // Bind Texture
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, activeTexture);
+
+            // Draw Mesh
+            gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
+
+            // Update interactive SVG lines/curves overlay
+            updateSVGOverlay();
+        }
+
+        function uploadCurveUniform(location, curvePoints) {
+            const arr = new Float32Array(8);
+            for (let i = 0; i < 4; i++) {
+                arr[i * 2] = curvePoints[i].x;
+                arr[i * 2 + 1] = curvePoints[i].y;
+            }
+            gl.uniform2fv(location, arr);
+        }
+
+        // Update the SVG overlay paths and control lines
+        function updateSVGOverlay() {
+            // Helper lines update
+            updateSVGLine('line-P0-C1_1', points.P0, points.C1_1);
+            updateSVGLine('line-P1-C1_2', points.P1, points.C1_2);
+            updateSVGLine('line-P1-C2_1', points.P1, points.C2_1);
+            updateSVGLine('line-P2-C2_2', points.P2, points.C2_2);
+            updateSVGLine('line-P2-C3_1', points.P2, points.C3_1);
+            updateSVGLine('line-P3-C3_2', points.P3, points.C3_2);
+            updateSVGLine('line-P3-C4_1', points.P3, points.C4_1);
+            updateSVGLine('line-P0-C4_2', points.P0, points.C4_2);
+
+            // Paths update
+            updateSVGPath('path-curve1', points.P0, points.C1_1, points.C1_2, points.P1);
+            updateSVGPath('path-curve2', points.P1, points.C2_1, points.C2_2, points.P2);
+            updateSVGPath('path-curve3', points.P2, points.C3_1, points.C3_2, points.P3);
+            updateSVGPath('path-curve4', points.P3, points.C4_1, points.C4_2, points.P0);
+
+            // Move circles to their coordinates
+            Object.keys(points).forEach(key => {
+                const circle = document.getElementById(`handle-${key}`);
+                if (circle) {
+                    circle.setAttribute('cx', points[key].x);
+                    circle.setAttribute('cy', points[key].y);
+                }
+            });
+        }
+
+        function updateSVGLine(id, pt1, pt2) {
+            const line = document.getElementById(id);
+            line.setAttribute('x1', pt1.x);
+            line.setAttribute('y1', pt1.y);
+            line.setAttribute('x2', pt2.x);
+            line.setAttribute('y2', pt2.y);
+        }
+
+        function updateSVGPath(id, p0, cp1, cp2, p3) {
+            const path = document.getElementById(id);
+            const d = `M ${p0.x},${p0.y} C ${cp1.x},${cp1.y} ${cp2.x},${cp2.y} ${p3.x},${p3.y}`;
+            path.setAttribute('d', d);
+        }
+
+        // SVG Dragging System
+        const svg = document.getElementById('svg-overlay');
+        let draggedKey = null;
+        let offset = { x: 0, y: 0 };
+
+        // Create circles in SVG
+        function buildHandles() {
+            Object.keys(points).forEach(key => {
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('id', `handle-${key}`);
+                circle.setAttribute('r', key.startsWith('P') ? '7' : '4.5');
+                circle.setAttribute('class', key.startsWith('P') ? 'handle corner' : 'handle control');
+                
+                circle.addEventListener('pointerdown', (e) => {
+                    e.stopPropagation();
+                    draggedKey = key;
+                    circle.classList.add('active');
+                    circle.setPointerCapture(e.pointerId);
+                });
+
+                circle.addEventListener('pointermove', (e) => {
+                    if (draggedKey !== key) return;
+                    const rect = svg.getBoundingClientRect();
+                    
+                    // Coordinates relative to the SVG viewbox (800x800)
+                    const x = ((e.clientX - rect.left) / rect.width) * 800;
+                    const y = ((e.clientY - rect.top) / rect.height) * 800;
+
+                    // Drag limits to stay inside the canvas bounds
+                    const dragX = Math.max(0, Math.min(800, x));
+                    const dragY = Math.max(0, Math.min(800, y));
+
+                    const dx = dragX - points[key].x;
+                    const dy = dragY - points[key].y;
+
+                    points[key].x = dragX;
+                    points[key].y = dragY;
+
+                    // If we drag a corner, move its adjacent control handles along as a group to maintain visual layout
+                    if (key === 'P0') {
+                        points.C1_1.x += dx; points.C1_1.y += dy;
+                        points.C4_2.x += dx; points.C4_2.y += dy;
+                    } else if (key === 'P1') {
+                        points.C1_2.x += dx; points.C1_2.y += dy;
+                        points.C2_1.x += dx; points.C2_1.y += dy;
+                    } else if (key === 'P2') {
+                        points.C2_2.x += dx; points.C2_2.y += dy;
+                        points.C3_1.x += dx; points.C3_1.y += dy;
+                    } else if (key === 'P3') {
+                        points.C3_2.x += dx; points.C3_2.y += dy;
+                        points.C4_1.x += dx; points.C4_1.y += dy;
+                    }
+
+                    render();
+                });
+
+                circle.addEventListener('pointerup', (e) => {
+                    if (draggedKey === key) {
+                        draggedKey = null;
+                        circle.classList.remove('active');
+                        circle.releasePointerCapture(e.pointerId);
+                    }
+                });
+
+                svg.appendChild(circle);
+            });
+        }
+
+        // Init UI Events
+        document.getElementById('btn-tex-leaf').addEventListener('click', () => {
+            activeTexture = leafTexture;
+            document.getElementById('btn-tex-leaf').classList.add('btn-primary');
+            document.getElementById('btn-tex-checker').classList.remove('btn-primary');
+            render();
+        });
+
+        document.getElementById('btn-tex-checker').addEventListener('click', () => {
+            activeTexture = checkerboardTexture;
+            document.getElementById('btn-tex-checker').classList.add('btn-primary');
+            document.getElementById('btn-tex-leaf').classList.remove('btn-primary');
+            render();
+        });
+
+        document.getElementById('switch-grid').addEventListener('change', render);
+
+        document.getElementById('switch-svg').addEventListener('change', (e) => {
+            svg.style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', () => {
+            points = JSON.parse(JSON.stringify(DEFAULT_POINTS));
+            render();
+        });
+
+        // Start
+        buildHandles();
+        render();
+
+    </script>
+</body>
+</html>
