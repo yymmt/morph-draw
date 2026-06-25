@@ -1218,7 +1218,9 @@ function addShapeAt(type, x, y) {
     const count = Object.values(state.shapes).filter(s => s.name && s.name.startsWith(type)).length + 1;
     const shape = {
         id, type: 'bezier-group', name: `${type} ${count}`, bezierIds: bIds, props: { x, y },
-        style: { fill: '#2196F3', opacity: 0.7 }, childIds: []
+        style: { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true },
+        strokeWidthData: [{ t: 0, w: 10 }, { t: 1, w: 10 }],
+        childIds: []
     };
     state.shapes[id] = shape;
 
@@ -1338,7 +1340,8 @@ function createWrap() {
         name: `wrap ${wrapCount}`,
         bezierIds: bIds,
         props: { x: 0, y: 0 },
-        style: { fill: '#2196F3', opacity: 0.5 }, // 半透明の青で塗りつぶす
+        style: { fill: '#2196F3', opacity: 0.5, outline: true, fillEnabled: true }, // 半透明の青で塗りつぶす
+        strokeWidthData: [{ t: 0, w: 10 }, { t: 1, w: 10 }],
         childIds: []
     };
     state.shapes[wrapId] = wrapShape;
@@ -1751,6 +1754,21 @@ function openDrawing(id) {
         state.shapes = data.shapes || {};
         state.beziers = data.beziers || {};
         state.scene = data.scene || [];
+
+        // マイグレーション: 新規スタイルプロパティと太さデータの補完
+        Object.values(state.shapes).forEach(shape => {
+            if (shape && shape.type === 'bezier-group') {
+                if (shape.style) {
+                    if (shape.style.outline === undefined) shape.style.outline = true;
+                    if (shape.style.fillEnabled === undefined) shape.style.fillEnabled = true;
+                } else {
+                    shape.style = { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true };
+                }
+                if (!shape.strokeWidthData) {
+                    shape.strokeWidthData = [{ t: 0, w: 10 }, { t: 1, w: 10 }];
+                }
+            }
+        });
 
         // IDカウンタの初期化
         initializeIdCounter();
