@@ -113,9 +113,87 @@ const MDMath = {
         const mt = 1 - t;
         const dx = 3 * mt ** 2 * ((p[1].x || 0) - (p[0].x || 0)) + 6 * mt * t * ((p[2].x || 0) - (p[1].x || 0)) + 3 * t ** 2 * ((p[3].x || 0) - (p[2].x || 0));
         const dy = 3 * mt ** 2 * ((p[1].y || 0) - (p[0].y || 0)) + 6 * mt * t * ((p[2].y || 0) - (p[1].y || 0)) + 3 * t ** 2 * ((p[3].y || 0) - (p[2].y || 0));
-        return { dx, dy };
     }
 };
+
+function getShapeThickness(shape, t) {
+    const data = shape.strokeWidthData || [{ t: 0, w: 10 }, { t: 1, w: 10 }];
+    if (data.length === 0) return 10;
+    if (data.length === 1) return data[0].w;
+    
+    if (t <= data[0].t) return data[0].w;
+    if (t >= data[data.length - 1].t) return data[data.length - 1].w;
+    
+    for (let i = 0; i < data.length - 1; i++) {
+        const p1 = data[i];
+        const p2 = data[i+1];
+        if (t >= p1.t && t <= p2.t) {
+            const ratio = (t - p1.t) / (p2.t - p1.t);
+            return p1.w + ratio * (p2.w - p1.w);
+        }
+    }
+    return data[data.length - 1].w;
+}
+
+function generateOutlinePathPoints(shape) {
+    const leftPoints = [];
+    const rightPoints = [];
+    const N = shape.bezierIds ? shape.bezierIds.length : 0;
+    if (N === 0) return { leftPoints, rightPoints };
+    
+    for (let i = 0; i < N; i++) {
+        const bid = shape.bezierIds[i];
+        const bez = state.beziers[bid];
+        if (!bez) continue;
+        
+        const ts = Object.keys(bez.samplePointByT || {}).map(Number).sort((a, b) => a - b);
+        if (ts.length === 0) {
+            ts.push(0, 1);
+        }
+        
+        ts.forEach((tLocal) => {
+            const tGlobal = (i + tLocal) / N;
+            const p = (bez.samplePointByT && bez.samplePointByT[tLocal]) || MDMath.getPoint(bez, tLocal);
+            
+            let tangent = MDMath.getTangent(bez, tLocal);
+            let len = Math.hypot(tangent.dx, tangent.dy);
+            if (len < 1e-6) {
+                const t2 = tLocal < 0.5 ? tLocal + 0.001 : tLocal - 0.001;
+                tangent = MDMath.getTangent(bez, t2);
+                len = Math.hypot(tangent.dx, tangent.dy);
+            }
+            
+            let nx = 0, ny = 0;
+            if (len > 1e-6) {
+                nx = -tangent.dy / len;
+                ny = tangent.dx / len;
+            }
+            
+            const w = getShapeThickness(shape, tGlobal);
+            const r = w / 2;
+            
+            leftPoints.push({ x: p.x + nx * r, y: p.y + ny * r });
+            rightPoints.push({ x: p.x - nx * r, y: p.y - ny * r });
+        });
+    }
+    return { leftPoints, rightPoints };
+}
+
+function getOutlinePathD(shape) {
+    const { leftPoints, rightPoints } = generateOutlinePathPoints(shape);
+    if (leftPoints.length === 0) return '';
+    
+    let d = '';
+    d += `M ${leftPoints[0].x},${leftPoints[0].y}`;
+    for (let i = 1; i < leftPoints.length; i++) {
+        d += ` L ${leftPoints[i].x},${leftPoints[i].y}`;
+    }
+    for (let i = rightPoints.length - 1; i >= 0; i--) {
+        d += ` L ${rightPoints[i].x},${rightPoints[i].y}`;
+    }
+    d += ' Z';
+    return d;
+}
 
 function initializeIdCounter() {
     const allIds = [...Object.keys(state.shapes), ...Object.keys(state.beziers)];
@@ -1437,31 +1515,47 @@ function drawShapeToCanvasContext(ctx, shapeId) {
             }
         }
     } else if (shape.bezierIds) {
-        ctx.beginPath();
-        let first = true;
-        shape.bezierIds.forEach((bid, i) => {
-            const b = state.beziers[bid];
-            if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
-            const v = b.controlPoints.map(cp => cp.v);
-            if (first) {
-                ctx.moveTo(v[0].x, v[0].y);
-                first = false;
-            } else {
-                ctx.lineTo(v[0].x, v[0].y);
-            }
-            ctx.bezierCurveTo(v[1].x, v[1].y, v[2].x, v[2].y, v[3].x, v[3].y);
-        });
-        if (shape.name && shape.name.startsWith('wrap')) {
+        const fillEnabled = shape.style?.fillEnabled !== false;
+        const outlineEnabled = shape.style?.outline !== false;
+
+        ctx.globalAlpha = shape.style?.opacity ?? 1;
+
+        if (fillEnabled) {
+            ctx.beginPath();
+            let first = true;
+            shape.bezierIds.forEach((bid, i) => {
+                const b = state.beziers[bid];
+                if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
+                const v = b.controlPoints.map(cp => cp.v);
+                if (first) {
+                    ctx.moveTo(v[0].x, v[0].y);
+                    first = false;
+                } else {
+                    ctx.lineTo(v[0].x, v[0].y);
+                }
+                ctx.bezierCurveTo(v[1].x, v[1].y, v[2].x, v[2].y, v[3].x, v[3].y);
+            });
             ctx.closePath();
+            ctx.fillStyle = shape.style?.fill || '#000000';
+            ctx.fill();
         }
 
-        ctx.fillStyle = shape.style?.fill || '#000000';
-        ctx.globalAlpha = shape.style?.opacity ?? 1;
-        ctx.fill();
-
-        ctx.strokeStyle = shape.style?.fill || '#000000';
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        if (outlineEnabled) {
+            const { leftPoints, rightPoints } = generateOutlinePathPoints(shape);
+            if (leftPoints.length > 0) {
+                ctx.beginPath();
+                ctx.moveTo(leftPoints[0].x, leftPoints[0].y);
+                for (let i = 1; i < leftPoints.length; i++) {
+                    ctx.lineTo(leftPoints[i].x, leftPoints[i].y);
+                }
+                for (let i = rightPoints.length - 1; i >= 0; i--) {
+                    ctx.lineTo(rightPoints[i].x, rightPoints[i].y);
+                }
+                ctx.closePath();
+                ctx.fillStyle = shape.style?.fill || '#000000';
+                ctx.fill();
+            }
+        }
     }
 
     ctx.restore();
@@ -1552,39 +1646,71 @@ function renderShape(id, container, defs, isMinimap = false) {
             renderShape(src.id, cloneG, defs, isMinimap); g.appendChild(cloneG);
         }
     } else if (shape.bezierIds) {
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        let d = '';
-        shape.bezierIds.forEach((bid, i) => {
-            const b = state.beziers[bid];
-            if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
-            const v = b.controlPoints.map(cp => cp.v);
+        const fillEnabled = shape.style?.fillEnabled !== false;
+        const outlineEnabled = shape.style?.outline !== false;
 
-            if (i === 0) {
-                d += `M ${v[0].x},${v[0].y}`;
-            }
-            d += ` C ${v[1].x},${v[1].y} ${v[2].x},${v[2].y} ${v[3].x},${v[3].y}`;
-        }); /* bezierIds.forEach */
-        if (shape.name && shape.name.startsWith('wrap')) {
+        // 1. 塗り (fillEnabled が ON の場合)
+        if (fillEnabled) {
+            const fillPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            let d = '';
+            shape.bezierIds.forEach((bid, i) => {
+                const b = state.beziers[bid];
+                if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
+                const v = b.controlPoints.map(cp => cp.v);
+                if (i === 0) d += `M ${v[0].x},${v[0].y}`;
+                d += ` C ${v[1].x},${v[1].y} ${v[2].x},${v[2].y} ${v[3].x},${v[3].y}`;
+            });
             d += ' Z';
+            fillPath.setAttribute('d', d);
+            fillPath.setAttribute('fill', shape.style.fill || '#000000');
+            fillPath.setAttribute('fill-opacity', shape.style.opacity ?? 1);
+            fillPath.setAttribute('stroke', 'none');
+            g.appendChild(fillPath);
         }
-        path.setAttribute('d', d);
-        path.setAttribute('fill', shape.style.fill);
-        path.setAttribute('fill-opacity', shape.style.opacity);
 
-        const isSelected = !isMinimap && state.selectedShapeIds.includes(shape.id);
-        const isAnchored = !isMinimap && state.anchoredShapeIds?.includes(shape.id);
-        let strokeColor = shape.style.fill;
-        let strokeWidth = 1;
-        if (isSelected) {
-            strokeColor = '#ffeb3b'; // 黄色
-            strokeWidth = 3;
-        } else if (isAnchored) {
-            strokeColor = '#ff9800'; // オレンジ
-            strokeWidth = 3;
+        // 2. 動的な太さの輪郭 (outlineEnabled が ON の場合)
+        if (outlineEnabled) {
+            const outlineD = getOutlinePathD(shape);
+            if (outlineD) {
+                const outlinePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                outlinePath.setAttribute('d', outlineD);
+                outlinePath.setAttribute('fill', shape.style.fill || '#000000');
+                outlinePath.setAttribute('fill-opacity', shape.style.opacity ?? 1);
+                outlinePath.setAttribute('stroke', 'none');
+                g.appendChild(outlinePath);
+            }
         }
-        path.setAttribute('stroke', strokeColor);
-        path.setAttribute('stroke-width', strokeWidth);
-        g.appendChild(path);
+
+        // 3. ガイド線 (メインSVG描画かつ isMinimap でない場合のみ表示)
+        if (!isMinimap) {
+            const guidePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            let d = '';
+            shape.bezierIds.forEach((bid, i) => {
+                const b = state.beziers[bid];
+                if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
+                const v = b.controlPoints.map(cp => cp.v);
+                if (i === 0) d += `M ${v[0].x},${v[0].y}`;
+                d += ` C ${v[1].x},${v[1].y} ${v[2].x},${v[2].y} ${v[3].x},${v[3].y}`;
+            });
+            d += ' Z';
+            guidePath.setAttribute('d', d);
+            guidePath.setAttribute('fill', 'none');
+
+            const isSelected = state.selectedShapeIds.includes(shape.id);
+            const isAnchored = state.anchoredShapeIds?.includes(shape.id);
+            let strokeColor = (shape.style.fill || '#2196F3') + '44'; // さらに薄い半透明
+            let strokeWidth = 0.5;
+            if (isSelected) {
+                strokeColor = '#ffeb3b'; // 黄色
+                strokeWidth = 1.5;
+            } else if (isAnchored) {
+                strokeColor = '#ff9800'; // オレンジ
+                strokeWidth = 1.5;
+            }
+            guidePath.setAttribute('stroke', strokeColor);
+            guidePath.setAttribute('stroke-width', strokeWidth);
+            g.appendChild(guidePath);
+        }
 
         // 頂点選択モード（キーボード駆動のフォーカス調整中）の UI 表示
         if (!isMinimap && state.focusedVertex && state.focusedVertex.shapeId === shape.id) {
