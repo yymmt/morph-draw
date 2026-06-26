@@ -147,9 +147,16 @@
                 <div id="thickness-guide" class="hidden">
                     <span>【太さ編集】 t+左右ドラッグ:位置移動 | w+上下ドラッグ:太さ変更 | Shift+t+左右ドラッグ:データ位置変更 | x:データ削除 | Shift+w:終了</span>
                 </div>
+                <div id="pattern-guide" class="hidden">
+                    <span>【パターン角編集】 t+左右ドラッグ:ターゲット移動（角の自動選択） | Shift+t+左右ドラッグ:選択中の角のパラメータ調整 | Shift+p:終了</span>
+                </div>
                 <div id="search-bar" class="hidden">
                     <span class="search-prefix">/</span>
                     <input id="search-input" type="text" placeholder="検索 (レイヤー名/ID/タイプ)...">
+                </div>
+                <div id="command-bar" class="hidden">
+                    <span class="command-prefix">:</span>
+                    <input id="command-input" type="text" placeholder="コマンドを入力... (例: fillpattern sample)">
                 </div>
             </main>
 
@@ -167,7 +174,7 @@
         </div>
     </div>
 
-    <script src="main.js?v=75"></script>
+    <script src="main.js?v=76"></script>
     <script src="test.js?v=72"></script>
 </body>
 

@@ -292,6 +292,82 @@ try {
         process.exit(1);
     }
 
+    // --- 追加テスト5：WebGL クーンズ面パターン塗りのテスト ---
+    try {
+        sandbox.state.shapes = {};
+        sandbox.state.beziers = {};
+        
+        // テスト用のクローズドShapeとベジェ曲線を準備
+        const shape = {
+            id: 's_pattern',
+            type: 'bezier-group',
+            bezierIds: ['b1', 'b2', 'b3', 'b4']
+        };
+        
+        // 4隅を結ぶ正方形のベジェ曲線
+        sandbox.state.shapes['s_pattern'] = shape;
+        sandbox.state.beziers = {
+            'b1': {
+                id: 'b1',
+                controlPoints: [{v: {x: 100, y: 100}}, {v: {x: 133, y: 100}}, {v: {x: 166, y: 100}}, {v: {x: 200, y: 100}}]
+            },
+            'b2': {
+                id: 'b2',
+                controlPoints: [{v: {x: 200, y: 100}}, {v: {x: 200, y: 133}}, {v: {x: 200, y: 166}}, {v: {x: 200, y: 200}}]
+            },
+            'b3': {
+                id: 'b3',
+                controlPoints: [{v: {x: 200, y: 200}}, {v: {x: 166, y: 200}}, {v: {x: 133, y: 200}}, {v: {x: 100, y: 200}}]
+            },
+            'b4': {
+                id: 'b4',
+                controlPoints: [{v: {x: 100, y: 200}}, {v: {x: 100, y: 166}}, {v: {x: 100, y: 133}}, {v: {x: 100, y: 100}}]
+            }
+        };
+
+        // 1. initPatternCorners の動作確認
+        vm.runInContext("initPatternCorners(state.shapes['s_pattern'])", sandbox);
+        const corners = shape.patternCorners;
+        if (!corners) {
+            throw new Error('initPatternCorners did not set shape.patternCorners');
+        }
+        if (typeof corners.TL !== 'number' || typeof corners.TR !== 'number' ||
+            typeof corners.BR !== 'number' || typeof corners.BL !== 'number') {
+            throw new Error('Corners should contain TL, TR, BR, BL parameters');
+        }
+        console.log('✅ test_node.js: initPatternCorners test passed!');
+
+        // 2. generateCoonsPatchMesh の動作確認
+        const mesh = vm.runInContext("generateCoonsPatchMesh(state.shapes['s_pattern'])", sandbox);
+        if (!mesh) {
+            throw new Error('generateCoonsPatchMesh returned null');
+        }
+        const expectedCount = 33 * 33 * 2; // (GRID_SIZE+1)*(GRID_SIZE+1)*2
+        if (mesh.length !== expectedCount) {
+            throw new Error(`Expected mesh length to be ${expectedCount}, got ${mesh.length}`);
+        }
+        console.log('✅ test_node.js: generateCoonsPatchMesh test passed!');
+
+        // 3. コマンド実行テスト (executeCommand)
+        sandbox.state.selectedShapeIds = ['s_pattern'];
+        vm.runInContext("executeCommand('fillpattern sample')", sandbox);
+        if (shape.style.fillPattern !== 'sample') {
+            throw new Error('executeCommand("fillpattern sample") did not set fillPattern style');
+        }
+        console.log('✅ test_node.js: executeCommand fillpattern test passed!');
+
+        // 4. パターン編集モードトグル (Shift+p)
+        vm.runInContext("handleInputUpdate('keydown', 'p', { shiftKey: true, preventDefault: () => {} })", sandbox);
+        if (sandbox.state.patternEdit.active !== true) {
+            throw new Error('Shift+p did not activate patternEdit mode');
+        }
+        console.log('✅ test_node.js: handleTogglePatternEdit test passed!');
+        
+    } catch (err) {
+        console.error('❌ test_node.js: WebGL pattern fill test failed!', err);
+        process.exit(1);
+    }
+
     // --- 追加テスト4：サムネイル生成 & Blob 保存のテスト ---
     sandbox.state.currentDrawId = 'd_test';
     sandbox.state.drawingName = 'Test Save';

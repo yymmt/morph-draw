@@ -698,3 +698,64 @@ body {
 #thickness-guide.hidden {
     display: none !important;
 }
+
+/* Pattern Edit Mode Guide */
+#pattern-guide {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(33, 33, 33, 0.9);
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    z-index: 200;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    text-align: center;
+    white-space: nowrap;
+}
+
+#pattern-guide.hidden {
+    display: none !important;
+}
+
+/* Command Bar Overlay */
+#command-bar {
+    position: absolute;
+    bottom: 24px;
+    left: 24px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #ccd1d9;
+    border-radius: 6px;
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
+    z-index: 200;
+    transition: all 0.2s ease;
+}
+
+#command-bar.hidden {
+    display: none !important;
+}
+
+.command-prefix {
+    font-size: 16px;
+    color: #9c27b0;
+    font-weight: bold;
+}
+
+#command-input {
+    background: transparent;
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 14px;
+    width: 280px;
+    color: #333;
+}
