@@ -1874,20 +1874,6 @@ function drawShapeToCanvasContext(ctx, shapeId) {
     if (shape.type === 'layer') {
         ctx.globalAlpha *= (shape.style?.opacity ?? 1);
         shape.childIds?.forEach(childId => drawShapeToCanvasContext(ctx, childId));
-    } else if (shape.type === 'linked-paste' && shape.sourceId) {
-        const src = state.shapes[shape.sourceId];
-        if (src) {
-            for (let i = 0; i < (shape.transform.count || 0); i++) {
-                const angle = i * (shape.transform.rotationStep || 0);
-                ctx.save();
-                ctx.rotate(angle * Math.PI / 180);
-                if (shape.transform.mirror) {
-                    ctx.scale(-1, 1);
-                }
-                drawShapeToCanvasContext(ctx, src.id);
-                ctx.restore();
-            }
-        }
     } else if (shape.bezierIds) {
         const fillEnabled = shape.style?.fillEnabled !== false;
         const outlineEnabled = shape.style?.outline !== false;
@@ -2479,13 +2465,6 @@ function renderShape(id, container, defs, isMinimap = false) {
     if (shape.type === 'layer') {
         g.setAttribute('opacity', shape.style?.opacity ?? 1);
         shape.childIds.forEach(childId => renderShape(childId, g, defs, isMinimap));
-    } else if (shape.type === 'linked-paste' && shape.sourceId) {
-        const src = state.shapes[shape.sourceId];
-        if (src) for (let i = 0; i < (shape.transform.count || 0); i++) {
-            const cloneG = document.createElementNS('http://www.w3.org/2000/svg', 'g'), angle = i * (shape.transform.rotationStep || 0), mirror = shape.transform.mirror ? 'scale(-1, 1)' : '';
-            cloneG.setAttribute('transform', `rotate(${angle}) ${mirror}`);
-            renderShape(src.id, cloneG, defs, isMinimap); g.appendChild(cloneG);
-        }
     } else if (shape.bezierIds) {
         // 3. ガイド線 (メインSVG描画かつ isMinimap でない場合のみ表示)
         if (!isMinimap) {
