@@ -136,13 +136,13 @@ const MDMath = {
         const data = shape.strokeWidthData || [{ t: 0, w: 10 }, { t: 1, w: 10 }];
         if (data.length === 0) return 10;
         if (data.length === 1) return data[0].w;
-        
+
         if (t <= data[0].t) return data[0].w;
         if (t >= data[data.length - 1].t) return data[data.length - 1].w;
-        
+
         for (let i = 0; i < data.length - 1; i++) {
             const p1 = data[i];
-            const p2 = data[i+1];
+            const p2 = data[i + 1];
             if (t >= p1.t && t <= p2.t) {
                 const ratio = (t - p1.t) / (p2.t - p1.t);
                 return p1.w + ratio * (p2.w - p1.w);
@@ -157,21 +157,21 @@ const MDMath = {
         const rightPoints = [];
         const N = shape.bezierIds ? shape.bezierIds.length : 0;
         if (N === 0) return { leftPoints, rightPoints };
-        
+
         for (let i = 0; i < N; i++) {
             const bid = shape.bezierIds[i];
             const bez = beziers[bid];
             if (!bez) continue;
-            
+
             const ts = Object.keys(bez.samplePointByT || {}).map(Number).sort((a, b) => a - b);
             if (ts.length === 0) {
                 ts.push(0, 1);
             }
-            
+
             ts.forEach((tLocal) => {
                 const tGlobal = (i + tLocal) / N;
                 const p = (bez.samplePointByT && bez.samplePointByT[tLocal]) || MDMath.getPoint(bez, tLocal);
-                
+
                 let tangent = MDMath.getTangent(bez, tLocal);
                 let len = Math.hypot(tangent.dx, tangent.dy);
                 if (len < 1e-6) {
@@ -179,16 +179,16 @@ const MDMath = {
                     tangent = MDMath.getTangent(bez, t2);
                     len = Math.hypot(tangent.dx, tangent.dy);
                 }
-                
+
                 let nx = 0, ny = 0;
                 if (len > 1e-6) {
                     nx = -tangent.dy / len;
                     ny = tangent.dx / len;
                 }
-                
+
                 const w = MDMath.getShapeThickness(shape, tGlobal);
                 const r = w / 2;
-                
+
                 leftPoints.push({ x: p.x + nx * r, y: p.y + ny * r });
                 rightPoints.push({ x: p.x - nx * r, y: p.y - ny * r });
             });
@@ -199,7 +199,7 @@ const MDMath = {
     getOutlinePathD: (shape, beziers) => {
         const { leftPoints, rightPoints } = MDMath.generateOutlinePathPoints(shape, beziers);
         if (leftPoints.length === 0) return '';
-        
+
         let d = '';
         d += `M ${leftPoints[0].x},${leftPoints[0].y}`;
         for (let i = 1; i < leftPoints.length; i++) {
@@ -215,19 +215,19 @@ const MDMath = {
     getShapePointAndNormal: (shape, t, beziers) => {
         const N = shape.bezierIds ? shape.bezierIds.length : 0;
         if (N === 0) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
-        
+
         t = Math.max(0, Math.min(1, t));
-        
+
         let i = Math.floor(t * N);
         if (i >= N) i = N - 1;
         const tLocal = t * N - i;
-        
+
         const bid = shape.bezierIds[i];
         const bez = beziers[bid];
         if (!bez) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
-        
+
         const p = MDMath.getPoint(bez, tLocal);
-        
+
         let tangent = MDMath.getTangent(bez, tLocal);
         let len = Math.hypot(tangent.dx, tangent.dy);
         if (len < 1e-6) {
@@ -235,13 +235,13 @@ const MDMath = {
             tangent = MDMath.getTangent(bez, t2);
             len = Math.hypot(tangent.dx, tangent.dy);
         }
-        
+
         let nx = 0, ny = 0;
         if (len > 1e-6) {
             nx = -tangent.dy / len;
             ny = tangent.dx / len;
         }
-        
+
         return { p, nx, ny };
     }
 };
@@ -606,7 +606,7 @@ function handleToggleThicknessEdit(ctx) {
             state.thicknessEdit.editIndex = -1;
             const guide = document.getElementById('thickness-guide');
             if (guide) guide.classList.remove('hidden');
-            
+
             // Ensure patternEdit is deactivated
             if (state.patternEdit.active) {
                 state.patternEdit.active = false;
@@ -658,7 +658,7 @@ function handleWSlideThicknessStart() {
     const shapeId = state.selectedShapeIds[0];
     const shape = state.shapes[shapeId];
     if (!shape || !shape.strokeWidthData) return;
-    
+
     const targetT = state.thicknessEdit.targetT;
     let closestIndex = -1;
     let minDiff = 0.05;
@@ -669,7 +669,7 @@ function handleWSlideThicknessStart() {
             closestIndex = idx;
         }
     });
-    
+
     if (closestIndex >= 0) {
         state.thicknessEdit.editIndex = closestIndex;
     } else {
@@ -687,7 +687,7 @@ function handleTMoveThicknessStart() {
     const shapeId = state.selectedShapeIds[0];
     const shape = state.shapes[shapeId];
     if (!shape || !shape.strokeWidthData) return;
-    
+
     const targetT = state.thicknessEdit.targetT;
     let closestIndex = -1;
     let minDiff = Infinity;
@@ -699,7 +699,7 @@ function handleTMoveThicknessStart() {
             closestIndex = idx;
         }
     });
-    
+
     state.thicknessEdit.editIndex = closestIndex;
 }
 
@@ -717,7 +717,7 @@ function handleWSlideThickness(ctx) {
     const shapeId = state.selectedShapeIds[0];
     const shape = state.shapes[shapeId];
     if (!shape || !shape.strokeWidthData) return;
-    
+
     const editIndex = state.thicknessEdit.editIndex;
     if (editIndex >= 0 && editIndex < shape.strokeWidthData.length) {
         let w = shape.strokeWidthData[editIndex].w - ctx.dy * 0.2;
@@ -733,17 +733,17 @@ function handleTMoveThickness(ctx) {
     const shapeId = state.selectedShapeIds[0];
     const shape = state.shapes[shapeId];
     if (!shape || !shape.strokeWidthData) return;
-    
+
     const editIndex = state.thicknessEdit.editIndex;
     if (editIndex >= 0 && editIndex < shape.strokeWidthData.length) {
         const p = shape.strokeWidthData[editIndex];
         if (p.t === 0 || p.t === 1) return;
-        
+
         let t = p.t + ctx.dx * 0.005;
         const minT = shape.strokeWidthData[editIndex - 1].t + 0.01;
         const maxT = shape.strokeWidthData[editIndex + 1].t - 0.01;
         t = Math.max(minT, Math.min(maxT, t));
-        
+
         p.t = t;
         state.thicknessEdit.targetT = t;
         resolveBezierDependencies();
@@ -756,7 +756,7 @@ function handleDeleteThicknessPoint(ctx) {
     const shapeId = state.selectedShapeIds[0];
     const shape = state.shapes[shapeId];
     if (!shape || !shape.strokeWidthData) return { pushHistory: false, needsRender: false };
-    
+
     const targetT = state.thicknessEdit.targetT;
     let closestIndex = -1;
     let minDiff = 0.05;
@@ -768,7 +768,7 @@ function handleDeleteThicknessPoint(ctx) {
             closestIndex = idx;
         }
     });
-    
+
     if (closestIndex >= 0 && shape.strokeWidthData.length > 2) {
         shape.strokeWidthData.splice(closestIndex, 1);
         resolveBezierDependencies();
@@ -782,9 +782,9 @@ function handleDeleteThicknessPoint(ctx) {
 function handleTransformStart(ctx) {
     const key = ctx.detail;
     const isShift = ctx.rawEvent ? ctx.rawEvent.shiftKey : false;
-    
+
     let desiredMode = null;
-    
+
     if (state.patternEdit.active) {
         if ((key === 't' || key === 'T') && isShift) {
             desiredMode = 't-move-pattern';
@@ -808,11 +808,11 @@ function handleTransformStart(ctx) {
     }
 
     if (desiredMode && desiredMode !== state.interaction.mode) {
-        const hasTarget = desiredMode === 'zoom' || 
-                          state.selectedShapeIds.length > 0 || 
-                          (state.focusedVertex && (desiredMode === 't-slide' || desiredMode === 'd-dist')) ||
-                          (state.thicknessEdit.active && (desiredMode === 't-slide-thickness' || desiredMode === 'w-slide-thickness' || desiredMode === 't-move-thickness')) ||
-                          (state.patternEdit.active && (desiredMode === 't-slide-pattern' || desiredMode === 't-move-pattern'));
+        const hasTarget = desiredMode === 'zoom' ||
+            state.selectedShapeIds.length > 0 ||
+            (state.focusedVertex && (desiredMode === 't-slide' || desiredMode === 'd-dist')) ||
+            (state.thicknessEdit.active && (desiredMode === 't-slide-thickness' || desiredMode === 'w-slide-thickness' || desiredMode === 't-move-thickness')) ||
+            (state.patternEdit.active && (desiredMode === 't-slide-pattern' || desiredMode === 't-move-pattern'));
         if (hasTarget) {
             state.dragInfo = {
                 start: { ...state.input.pointer },
@@ -827,7 +827,7 @@ function handleTransformStart(ctx) {
 function handleTransformEnd(ctx) {
     const key = ctx.detail;
     let mappedMode = null;
-    
+
     if (state.patternEdit.active) {
         if (key === 't' || key === 'T') {
             if (state.interaction.mode === 't-move-pattern' || state.interaction.mode === 't-slide-pattern') {
@@ -1916,7 +1916,7 @@ function drawShapeToCanvasContext(ctx, shapeId) {
             if (shape.style?.fillPattern) {
                 const webglCanvas = renderPatternWebGL(shape);
                 if (webglCanvas) {
-                    ctx.clip();
+                    // ctx.clip(); // 「ねじれた葉の裏」を描画するためコメントアウト。ベジェ曲線の範囲外も描画されるようになる。shapeを極端にねじらなければ通常は影響しないところである。このON/OFFをできるようにするかどうかは将来対応。
                     ctx.drawImage(webglCanvas, 0, 0);
                     drawn = true;
                 }
@@ -1955,20 +1955,20 @@ function initWebGLPatternRenderer() {
     const canvas = document.createElement('canvas');
     canvas.width = state.canvas.width;
     canvas.height = state.canvas.height;
-    
+
     let gl = null;
     try {
-        gl = canvas.getContext('webgl', { alpha: true, antialias: true }) || 
-             canvas.getContext('experimental-webgl', { alpha: true, antialias: true });
+        gl = canvas.getContext('webgl', { alpha: true, antialias: true }) ||
+            canvas.getContext('experimental-webgl', { alpha: true, antialias: true });
     } catch (e) {
         console.warn("WebGL not supported in this environment");
     }
-    
+
     if (!gl) return;
-    
+
     state.patternWebGLCanvas = canvas;
     state.gl = gl;
-    
+
     const vsSource = `
         attribute vec2 a_position;
         attribute vec2 a_texCoord;
@@ -1982,7 +1982,7 @@ function initWebGLPatternRenderer() {
             v_texCoord = a_texCoord;
         }
     `;
-    
+
     const fsSource = `
         precision mediump float;
         varying vec2 v_texCoord;
@@ -1991,25 +1991,25 @@ function initWebGLPatternRenderer() {
             gl_FragColor = texture2D(u_texture, v_texCoord);
         }
     `;
-    
+
     function compileShader(type, source) {
         const shader = gl.createShader(type);
         gl.shaderSource(shader, source);
         gl.compileShader(shader);
         return shader;
     }
-    
+
     const vs = compileShader(gl.VERTEX_SHADER, vsSource);
     const fs = compileShader(gl.FRAGMENT_SHADER, fsSource);
-    
+
     const program = gl.createProgram();
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
     gl.linkProgram(program);
     state.webglProgram = program;
-    
+
     gl.useProgram(program);
-    
+
     const GRID_SIZE = 32;
     const meshIndices = [];
     const meshTexCoords = [];
@@ -2028,26 +2028,26 @@ function initWebGLPatternRenderer() {
             meshIndices.push(p2, p1, p3);
         }
     }
-    
+
     const texCoordBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(meshTexCoords), gl.STATIC_DRAW);
     state.texCoordBuffer = texCoordBuffer;
-    
+
     const indexBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(meshIndices), gl.STATIC_DRAW);
     state.indexBuffer = indexBuffer;
     state.meshIndexCount = meshIndices.length;
-    
+
     const positionBuffer = gl.createBuffer();
     state.positionBuffer = positionBuffer;
-    
+
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([200, 200, 200, 255]));
     state.webglTexture = texture;
-    
+
     if (typeof Image !== 'undefined') {
         const image = new Image();
         image.onload = () => {
@@ -2081,11 +2081,11 @@ function getShapePoint(shape, t) {
 function initPatternCorners(shape) {
     const N = shape.bezierIds ? shape.bezierIds.length : 0;
     if (N === 0) return;
-    
+
     const numSamples = 100;
     const samples = [];
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    
+
     for (let step = 0; step < numSamples; step++) {
         const t = step / numSamples;
         const p = getShapePoint(shape, t);
@@ -2095,14 +2095,14 @@ function initPatternCorners(shape) {
         if (p.y < minY) minY = p.y;
         if (p.y > maxY) maxY = p.y;
     }
-    
+
     const targets = {
         TL: { x: minX, y: minY },
         TR: { x: maxX, y: minY },
         BR: { x: maxX, y: maxY },
         BL: { x: minX, y: maxY }
     };
-    
+
     const corners = {};
     Object.keys(targets).forEach(key => {
         const target = targets[key];
@@ -2117,90 +2117,93 @@ function initPatternCorners(shape) {
         });
         corners[key] = closestSample ? closestSample.t : 0.0;
     });
-    
+
     shape.patternCorners = corners;
 }
 
 function generateCoonsPatchMesh(shape) {
     const corners = shape.patternCorners;
     if (!corners) return null;
-    
+
     const tTL = corners.TL;
     const tTR = corners.TR;
     const tBR = corners.BR;
     const tBL = corners.BL;
-    
+
     const GRID_SIZE = 32;
     const positions = [];
-    
+
     const pTL = getShapePoint(shape, tTL);
     const pTR = getShapePoint(shape, tTR);
     const pBR = getShapePoint(shape, tBR);
     const pBL = getShapePoint(shape, tBL);
-    
+
     for (let j = 0; j <= GRID_SIZE; j++) {
         const v = j / GRID_SIZE;
         for (let i = 0; i <= GRID_SIZE; i++) {
             const u = i / GRID_SIZE;
-            
+
             const c0 = getShapePoint(shape, interpolatePerimeter(tBL, tBR, u));
             const c1 = getShapePoint(shape, interpolatePerimeter(tTL, tTR, u));
             const d0 = getShapePoint(shape, interpolatePerimeter(tBL, tTL, v));
             const d1 = getShapePoint(shape, interpolatePerimeter(tBR, tTR, v));
-            
+
             const bx = (1 - u) * (1 - v) * pBL.x +
-                       u * (1 - v) * pBR.x +
-                       (1 - u) * v * pTL.x +
-                       u * v * pTR.x;
-                       
+                u * (1 - v) * pBR.x +
+                (1 - u) * v * pTL.x +
+                u * v * pTR.x;
+
             const by = (1 - u) * (1 - v) * pBL.y +
-                       u * (1 - v) * pBR.y +
-                       (1 - u) * v * pTL.y +
-                       u * v * pTR.y;
-                       
+                u * (1 - v) * pBR.y +
+                (1 - u) * v * pTL.y +
+                u * v * pTR.y;
+
             const px = (1 - v) * c0.x + v * c1.x + (1 - u) * d0.x + u * d1.x - bx;
             const py = (1 - v) * c0.y + v * c1.y + (1 - u) * d0.y + u * d1.y - by;
-            
+
             positions.push(px, py);
         }
     }
-    
+
     return positions;
 }
 
 function renderPatternWebGL(shape) {
     const gl = state.gl;
     if (!gl || !state.patternWebGLCanvas) return null;
-    
+
     const positions = generateCoonsPatchMesh(shape);
     if (!positions) return null;
-    
+
     gl.viewport(0, 0, state.patternWebGLCanvas.width, state.patternWebGLCanvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
     gl.useProgram(state.webglProgram);
-    
+
     const aPosition = gl.getAttribLocation(state.webglProgram, 'a_position');
     gl.enableVertexAttribArray(aPosition);
     gl.bindBuffer(gl.ARRAY_BUFFER, state.positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.DYNAMIC_DRAW);
     gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
-    
+
     const aTexCoord = gl.getAttribLocation(state.webglProgram, 'a_texCoord');
     gl.enableVertexAttribArray(aTexCoord);
     gl.bindBuffer(gl.ARRAY_BUFFER, state.texCoordBuffer);
     gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 0, 0);
-    
+
     const uResolution = gl.getUniformLocation(state.webglProgram, 'u_resolution');
     gl.uniform2f(uResolution, state.canvas.width, state.canvas.height);
-    
+
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, state.webglTexture);
-    
+
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, state.indexBuffer);
     gl.drawElements(gl.TRIANGLES, state.meshIndexCount, gl.UNSIGNED_SHORT, 0);
-    
+
     return state.patternWebGLCanvas;
 }
 
@@ -2219,7 +2222,7 @@ function handleTogglePatternEdit(ctx) {
         if (!shape || !shape.bezierIds || !shape.style || !shape.style.fillPattern) {
             return { pushHistory: false, needsRender: false };
         }
-        
+
         state.patternEdit.active = !state.patternEdit.active;
         if (state.patternEdit.active) {
             state.patternEdit.targetT = 0.0;
@@ -2229,12 +2232,12 @@ function handleTogglePatternEdit(ctx) {
                 const thicknessGuide = document.getElementById('thickness-guide');
                 if (thicknessGuide) thicknessGuide.classList.add('hidden');
             }
-            
+
             // Auto-initialize corners if not present
             if (!shape.patternCorners) {
                 initPatternCorners(shape);
             }
-            
+
             // Find closest corner to targetT (0.0) initially
             let closestCorner = 'TL';
             let minDist = Infinity;
@@ -2249,7 +2252,7 @@ function handleTogglePatternEdit(ctx) {
                 }
             });
             state.patternEdit.selectedCorner = closestCorner;
-            
+
             const guide = document.getElementById('pattern-guide');
             if (guide) guide.classList.remove('hidden');
         } else {
@@ -2266,7 +2269,7 @@ function handleTSlidePattern(ctx) {
     let nextT = state.patternEdit.targetT + ctx.dx * 0.005;
     nextT = ((nextT % 1) + 1) % 1;
     state.patternEdit.targetT = nextT;
-    
+
     // Automatically find the closest corner to highlight/select
     if (state.selectedShapeIds.length > 0) {
         const shapeId = state.selectedShapeIds[0];
@@ -2295,7 +2298,7 @@ function handleTMovePatternStart() {
     const shapeId = state.selectedShapeIds[0];
     const shape = state.shapes[shapeId];
     if (!shape || !shape.patternCorners) return;
-    
+
     const targetT = state.patternEdit.targetT;
     let closestCorner = 'TL';
     let minDist = Infinity;
@@ -2318,10 +2321,10 @@ function handleTMovePattern(ctx) {
     const shapeId = state.selectedShapeIds[0];
     const shape = state.shapes[shapeId];
     if (!shape || !shape.patternCorners) return;
-    
+
     const key = state.patternEdit.selectedCorner;
     if (!key) return;
-    
+
     let t = shape.patternCorners[key] + ctx.dx * 0.005;
     t = ((t % 1) + 1) % 1;
     shape.patternCorners[key] = t;
@@ -2563,7 +2566,7 @@ function renderShape(id, container, defs, isMinimap = false) {
                 shape.strokeWidthData.forEach((ptData) => {
                     const { p, nx, ny } = MDMath.getShapePointAndNormal(shape, ptData.t, state.beziers);
                     const r = ptData.w / 2;
-                    
+
                     // 幅を示す線 (黄色)
                     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
                     line.setAttribute('x1', p.x - nx * r); line.setAttribute('y1', p.y - ny * r);
@@ -2571,7 +2574,7 @@ function renderShape(id, container, defs, isMinimap = false) {
                     line.setAttribute('stroke', '#ffeb3b');
                     line.setAttribute('stroke-width', 2);
                     g.appendChild(line);
-                    
+
                     // 座標点 (黄色円)
                     const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                     c.setAttribute('cx', p.x); c.setAttribute('cy', p.y); c.setAttribute('r', 4);
@@ -2580,13 +2583,13 @@ function renderShape(id, container, defs, isMinimap = false) {
                     g.appendChild(c);
                 });
             }
-            
+
             // (b) 現在狙っている targetT のインジケータ
             const targetT = state.thicknessEdit.targetT;
             const { p, nx, ny } = MDMath.getShapePointAndNormal(shape, targetT, state.beziers);
             const w = MDMath.getShapeThickness(shape, targetT);
             const r = w / 2;
-            
+
             // 現在の幅を示す線 (赤)
             const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
             line.setAttribute('x1', p.x - nx * r); line.setAttribute('y1', p.y - ny * r);
@@ -2594,14 +2597,14 @@ function renderShape(id, container, defs, isMinimap = false) {
             line.setAttribute('stroke', '#f44336');
             line.setAttribute('stroke-width', 2.5);
             g.appendChild(line);
-            
+
             // 狙う位置の点 (赤色二重円)
             const cOuter = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             cOuter.setAttribute('cx', p.x); cOuter.setAttribute('cy', p.y); cOuter.setAttribute('r', 6);
             cOuter.setAttribute('fill', 'none'); cOuter.setAttribute('stroke', '#f44336');
             cOuter.setAttribute('stroke-width', 1.5);
             g.appendChild(cOuter);
-            
+
             const cInner = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             cInner.setAttribute('cx', p.x); cInner.setAttribute('cy', p.y); cInner.setAttribute('r', 3);
             cInner.setAttribute('fill', '#f44336');
@@ -2615,10 +2618,10 @@ function renderShape(id, container, defs, isMinimap = false) {
                 ['TL', 'TR', 'BR', 'BL'].forEach((key) => {
                     const tCorner = shape.patternCorners[key];
                     if (tCorner === undefined) return;
-                    
+
                     const p = getShapePoint(shape, tCorner);
                     const isSelected = (state.patternEdit.selectedCorner === key);
-                    
+
                     // 青色ハンドル円
                     const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                     c.setAttribute('cx', p.x);
@@ -2628,7 +2631,7 @@ function renderShape(id, container, defs, isMinimap = false) {
                     c.setAttribute('stroke', '#2196F3');
                     c.setAttribute('stroke-width', 2);
                     g.appendChild(c);
-                    
+
                     // ラベル（TL, TR, BR, BL）
                     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                     text.setAttribute('x', p.x + 8);
@@ -2640,11 +2643,11 @@ function renderShape(id, container, defs, isMinimap = false) {
                     g.appendChild(text);
                 });
             }
-            
+
             // (b) 現在狙っている targetT のインジケータ (赤色二重円)
             const targetT = state.patternEdit.targetT;
             const p = getShapePoint(shape, targetT);
-            
+
             const cOuter = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             cOuter.setAttribute('cx', p.x);
             cOuter.setAttribute('cy', p.y);
@@ -2653,7 +2656,7 @@ function renderShape(id, container, defs, isMinimap = false) {
             cOuter.setAttribute('stroke', '#f44336');
             cOuter.setAttribute('stroke-width', 1.5);
             g.appendChild(cOuter);
-            
+
             const cInner = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             cInner.setAttribute('cx', p.x);
             cInner.setAttribute('cy', p.y);
@@ -2763,7 +2766,7 @@ let activeGalleryUrls = [];
 
 function renderGalleryGrid(items) {
     const list = document.getElementById('gallery-list');
-    
+
     // 古いオブジェクトURLを解放してメモリリークを防ぐ
     activeGalleryUrls.forEach(url => URL.revokeObjectURL(url));
     activeGalleryUrls = [];
@@ -2772,7 +2775,7 @@ function renderGalleryGrid(items) {
     items.sort((a, b) => b.updatedAt - a.updatedAt).forEach(item => {
         const card = document.createElement('div');
         card.className = 'gallery-card';
-        
+
         let imgSrc = '';
         if (item.preview) {
             if (item.preview instanceof Blob) {
