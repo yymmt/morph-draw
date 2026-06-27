@@ -1642,17 +1642,55 @@ function createWrap() {
 } /* createWrap */
 let currentRenderCoonsCount = 0;
 
-const shapeRenderCaches = {}; // shapeId -> { canvas, ctx, isDirty }
+const shapeRenderCaches = {}; // shapeId -> { canvas, ctx, isDirty, x, y, w, h }
 
 function getShapeCache(shapeId) {
     if (!shapeRenderCaches[shapeId]) {
         const canvas = document.createElement('canvas');
-        canvas.width = state.canvas.width;
-        canvas.height = state.canvas.height;
         const ctx = canvas.getContext('2d');
-        shapeRenderCaches[shapeId] = { canvas, ctx, isDirty: true };
+        shapeRenderCaches[shapeId] = { canvas, ctx, isDirty: true, x: 0, y: 0, w: 0, h: 0 };
     }
     return shapeRenderCaches[shapeId];
+}
+
+function getShapeRenderBounds(shapeId) {
+    const shape = state.shapes[shapeId];
+    if (!shape || !shape.bezierIds) return null;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    shape.bezierIds.forEach(bid => {
+        const bez = state.beziers[bid];
+        if (bez && bez.samplePointByT) {
+            Object.values(bez.samplePointByT).forEach(p => {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+            });
+        }
+    });
+
+    if (minX === Infinity) {
+        return { x: 0, y: 0, w: state.canvas.width, h: state.canvas.height };
+    }
+
+    // 線の太さの最大値を取得（余白計算用）
+    let maxW = 10;
+    if (shape.strokeWidthData && shape.strokeWidthData.length > 0) {
+        maxW = Math.max(...shape.strokeWidthData.map(d => d.w));
+    }
+    
+    // 余白（最大の太さの半分 + 安全パディング 20px）
+    const padding = (maxW / 2) + 20;
+
+    const x = Math.floor(minX - padding);
+    const y = Math.floor(minY - padding);
+    
+    // 最小サイズは 1px にクリップ（ゼロサイズによる canvas エラー防止）
+    const w = Math.max(1, Math.ceil(maxX + padding) - x);
+    const h = Math.max(1, Math.ceil(maxY + padding) - y);
+
+    return { x, y, w, h };
 }
 
 function markShapeDirty(shapeId) {
@@ -1751,9 +1789,31 @@ function drawShapeToCanvasContext(ctx, shapeId) {
     } else if (shape.bezierIds) {
         const cache = getShapeCache(shapeId);
         if (cache.isDirty) {
+            const bounds = getShapeRenderBounds(shapeId);
+            if (bounds) {
+                cache.x = bounds.x;
+                cache.y = bounds.y;
+                if (cache.canvas.width !== bounds.w || cache.canvas.height !== bounds.h) {
+                    cache.canvas.width = bounds.w;
+                    cache.canvas.height = bounds.h;
+                }
+                cache.w = bounds.w;
+                cache.h = bounds.h;
+            } else {
+                cache.x = 0;
+                cache.y = 0;
+                if (cache.canvas.width !== state.canvas.width || cache.canvas.height !== state.canvas.height) {
+                    cache.canvas.width = state.canvas.width;
+                    cache.canvas.height = state.canvas.height;
+                }
+                cache.w = state.canvas.width;
+                cache.h = state.canvas.height;
+            }
+
             const cCtx = cache.ctx;
-            cCtx.clearRect(0, 0, state.canvas.width, state.canvas.height);
+            cCtx.clearRect(0, 0, cache.w, cache.h);
             cCtx.save();
+            cCtx.translate(-cache.x, -cache.y);
 
             const fillEnabled = shape.style?.fillEnabled !== false;
             const outlineEnabled = shape.style?.outline !== false;
@@ -1832,7 +1892,7 @@ function drawShapeToCanvasContext(ctx, shapeId) {
             cache.isDirty = false;
         }
 
-        ctx.drawImage(cache.canvas, 0, 0);
+        ctx.drawImage(cache.canvas, cache.x, cache.y);
     }
 
     ctx.restore();
