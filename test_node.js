@@ -2,6 +2,22 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
+// mdmath.js のコードを読み込む
+const mdmathJsPath = path.join(__dirname, 'mdmath.js');
+if (!fs.existsSync(mdmathJsPath)) {
+    console.error(`Error: Cannot find mdmath.js at ${mdmathJsPath}`);
+    process.exit(1);
+}
+const mdmathJsCode = fs.readFileSync(mdmathJsPath, 'utf8');
+
+// webgl_renderer.js のコードを読み込む
+const webglRendererJsPath = path.join(__dirname, 'webgl_renderer.js');
+if (!fs.existsSync(webglRendererJsPath)) {
+    console.error(`Error: Cannot find webgl_renderer.js at ${webglRendererJsPath}`);
+    process.exit(1);
+}
+const webglRendererJsCode = fs.readFileSync(webglRendererJsPath, 'utf8');
+
 // main.js のコードを読み込む
 const mainJsPath = path.join(__dirname, 'main.js');
 if (!fs.existsSync(mainJsPath)) {
@@ -70,6 +86,8 @@ const sandbox = {
 // main.js を仮想環境で実行して状態と関数をロード
 try {
     vm.createContext(sandbox);
+    vm.runInContext(mdmathJsCode, sandbox);
+    vm.runInContext(webglRendererJsCode, sandbox);
     vm.runInContext(mainJsCode, sandbox);
     // const や let で定義されたスコープ変数は global/sandbox のプロパティにならないため、明示的にエクスポートして紐付ける
     vm.runInContext("globalThis.state = state; globalThis.handleMove = handleMove;", sandbox);
@@ -362,6 +380,24 @@ try {
             throw new Error('Shift+p did not activate patternEdit mode');
         }
         console.log('✅ test_node.js: handleTogglePatternEdit test passed!');
+
+        // 5. generateStrokeCoonsPatchMesh の動作確認
+        const strokeMesh = vm.runInContext("generateStrokeCoonsPatchMesh(state.shapes['s_pattern'])", sandbox);
+        if (!strokeMesh) {
+            throw new Error('generateStrokeCoonsPatchMesh returned null');
+        }
+        const expectedStrokeCount = 33 * 33 * 2;
+        if (strokeMesh.length !== expectedStrokeCount) {
+            throw new Error(`Expected stroke mesh length to be ${expectedStrokeCount}, got ${strokeMesh.length}`);
+        }
+        console.log('✅ test_node.js: generateStrokeCoonsPatchMesh test passed!');
+
+        // 6. strokepattern コマンド実行テスト
+        vm.runInContext("executeCommand('strokepattern brush_sample')", sandbox);
+        if (shape.style.strokePattern !== 'brush_sample') {
+            throw new Error('executeCommand("strokepattern brush_sample") did not set strokePattern style');
+        }
+        console.log('✅ test_node.js: executeCommand strokepattern test passed!');
         
     } catch (err) {
         console.error('❌ test_node.js: WebGL pattern fill test failed!', err);

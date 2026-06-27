@@ -61,6 +61,7 @@ const state = {
     minimap: {
         zoom: 1.0           // 新規：ミニマップのズーム倍率
     },
+    webglTextures: {},
     canvas: {
         width: 2000,
         height: 2000,
@@ -70,181 +71,6 @@ const state = {
     }
 }; /* state */
 
-const MDMath = {
-    KAPPA: 0.552284749831,
-    PI2: Math.PI * 2,
-
-    generators: {
-        arc: (params) => {
-            const { x, y, r, startAngle, endAngle } = params;
-            const p0 = { x: x + Math.cos(startAngle) * r, y: y + Math.sin(startAngle) * r };
-            const p3 = { x: x + Math.cos(endAngle) * r, y: y + Math.sin(endAngle) * r };
-            const p1 = {
-                x: p0.x - Math.sin(startAngle) * r * MDMath.KAPPA,
-                y: p0.y + Math.cos(startAngle) * r * MDMath.KAPPA
-            };
-            const p2 = {
-                x: p3.x + Math.sin(endAngle) * r * MDMath.KAPPA,
-                y: p3.y - Math.cos(endAngle) * r * MDMath.KAPPA
-            };
-            return [{ v: p0 }, { v: p1 }, { v: p2 }, { v: p3 }];
-        },
-        connector: (state, params) => {
-            const { src1, src2, d1, d2 } = params;
-            const bez1 = state.beziers[src1.bezierId];
-            const bez2 = state.beziers[src2.bezierId];
-            if (!bez1 || !bez2) return [];
-
-            const p0 = MDMath.getPoint(bez1, src1.t);
-            const p3 = MDMath.getPoint(bez2, src2.t);
-            const tan1 = MDMath.getTangent(bez1, src1.t);
-            const tan2 = MDMath.getTangent(bez2, src2.t);
-
-            const p1 = { x: p0.x + tan1.dx * d1, y: p0.y + tan1.dy * d1 };
-            const p2 = { x: p3.x - tan2.dx * d2, y: p3.y - tan2.dy * d2 };
-
-            return [{ v: p0 }, { v: p1 }, { v: p2 }, { v: p3 }];
-        }
-    },
-
-    getPoint: (bez, t) => {
-        if (!bez) return { x: 0, y: 0 };
-        const p = bez.controlPoints.map(cp => cp.v);
-        if (p.length < 4 || p.some(cp => !cp || cp.x === undefined)) {
-            return { x: 0, y: 0 };
-        }
-        const mt = 1 - t;
-        return {
-            x: mt ** 3 * (p[0].x || 0) + 3 * mt ** 2 * t * (p[1].x || 0) + 3 * mt * t ** 2 * (p[2].x || 0) + t ** 3 * (p[3].x || 0),
-            y: mt ** 3 * (p[0].y || 0) + 3 * mt ** 2 * t * (p[1].y || 0) + 3 * mt * t ** 2 * (p[2].y || 0) + t ** 3 * (p[3].y || 0)
-        };
-    },
-
-    getTangent: (bez, t) => {
-        if (!bez) return { dx: 0, dy: 0 };
-        const p = bez.controlPoints.map(cp => cp.v);
-        if (p.length < 4 || p.some(cp => !cp || cp.x === undefined)) {
-            return { dx: 0, dy: 0 };
-        }
-        const mt = 1 - t;
-        const dx = 3 * mt ** 2 * ((p[1].x || 0) - (p[0].x || 0)) + 6 * mt * t * ((p[2].x || 0) - (p[1].x || 0)) + 3 * t ** 2 * ((p[3].x || 0) - (p[2].x || 0));
-        const dy = 3 * mt ** 2 * ((p[1].y || 0) - (p[0].y || 0)) + 6 * mt * t * ((p[2].y || 0) - (p[1].y || 0)) + 3 * t ** 2 * ((p[3].y || 0) - (p[2].y || 0));
-        return { dx, dy };
-    },
-
-    getShapeThickness: (shape, t) => {
-        const data = shape.strokeWidthData || [{ t: 0, w: 10 }, { t: 1, w: 10 }];
-        if (data.length === 0) return 10;
-        if (data.length === 1) return data[0].w;
-
-        if (t <= data[0].t) return data[0].w;
-        if (t >= data[data.length - 1].t) return data[data.length - 1].w;
-
-        for (let i = 0; i < data.length - 1; i++) {
-            const p1 = data[i];
-            const p2 = data[i + 1];
-            if (t >= p1.t && t <= p2.t) {
-                const ratio = (t - p1.t) / (p2.t - p1.t);
-                return p1.w + ratio * (p2.w - p1.w);
-            }
-        }
-        return data[data.length - 1].w;
-    },
-
-    generateOutlinePathPoints: (shape, beziers) => {
-        // MEMO: 太さ0の範囲については、計算誤差でわずかにかすれた線が見える場合がありますが、追々、ブラシ機能を拡充するときに最適化などを検討します。
-        const leftPoints = [];
-        const rightPoints = [];
-        const N = shape.bezierIds ? shape.bezierIds.length : 0;
-        if (N === 0) return { leftPoints, rightPoints };
-
-        for (let i = 0; i < N; i++) {
-            const bid = shape.bezierIds[i];
-            const bez = beziers[bid];
-            if (!bez) continue;
-
-            const ts = Object.keys(bez.samplePointByT || {}).map(Number).sort((a, b) => a - b);
-            if (ts.length === 0) {
-                ts.push(0, 1);
-            }
-
-            ts.forEach((tLocal) => {
-                const tGlobal = (i + tLocal) / N;
-                const p = (bez.samplePointByT && bez.samplePointByT[tLocal]) || MDMath.getPoint(bez, tLocal);
-
-                let tangent = MDMath.getTangent(bez, tLocal);
-                let len = Math.hypot(tangent.dx, tangent.dy);
-                if (len < 1e-6) {
-                    const t2 = tLocal < 0.5 ? tLocal + 0.001 : tLocal - 0.001;
-                    tangent = MDMath.getTangent(bez, t2);
-                    len = Math.hypot(tangent.dx, tangent.dy);
-                }
-
-                let nx = 0, ny = 0;
-                if (len > 1e-6) {
-                    nx = -tangent.dy / len;
-                    ny = tangent.dx / len;
-                }
-
-                const w = MDMath.getShapeThickness(shape, tGlobal);
-                const r = w / 2;
-
-                leftPoints.push({ x: p.x + nx * r, y: p.y + ny * r });
-                rightPoints.push({ x: p.x - nx * r, y: p.y - ny * r });
-            });
-        }
-        return { leftPoints, rightPoints };
-    },
-
-    getOutlinePathD: (shape, beziers) => {
-        const { leftPoints, rightPoints } = MDMath.generateOutlinePathPoints(shape, beziers);
-        if (leftPoints.length === 0) return '';
-
-        let d = '';
-        d += `M ${leftPoints[0].x},${leftPoints[0].y}`;
-        for (let i = 1; i < leftPoints.length; i++) {
-            d += ` L ${leftPoints[i].x},${leftPoints[i].y}`;
-        }
-        for (let i = rightPoints.length - 1; i >= 0; i--) {
-            d += ` L ${rightPoints[i].x},${rightPoints[i].y}`;
-        }
-        d += ' Z';
-        return d;
-    },
-
-    getShapePointAndNormal: (shape, t, beziers) => {
-        const N = shape.bezierIds ? shape.bezierIds.length : 0;
-        if (N === 0) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
-
-        t = Math.max(0, Math.min(1, t));
-
-        let i = Math.floor(t * N);
-        if (i >= N) i = N - 1;
-        const tLocal = t * N - i;
-
-        const bid = shape.bezierIds[i];
-        const bez = beziers[bid];
-        if (!bez) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
-
-        const p = MDMath.getPoint(bez, tLocal);
-
-        let tangent = MDMath.getTangent(bez, tLocal);
-        let len = Math.hypot(tangent.dx, tangent.dy);
-        if (len < 1e-6) {
-            const t2 = tLocal < 0.5 ? tLocal + 0.001 : tLocal - 0.001;
-            tangent = MDMath.getTangent(bez, t2);
-            len = Math.hypot(tangent.dx, tangent.dy);
-        }
-
-        let nx = 0, ny = 0;
-        if (len > 1e-6) {
-            nx = -tangent.dy / len;
-            ny = tangent.dx / len;
-        }
-
-        return { p, nx, ny };
-    }
-};
 
 function initializeIdCounter() {
     const allIds = [...Object.keys(state.shapes), ...Object.keys(state.beziers)];
@@ -1900,11 +1726,13 @@ function drawShapeToCanvasContext(ctx, shapeId) {
 
             let drawn = false;
             if (shape.style?.fillPattern) {
-                const webglCanvas = renderPatternWebGL(shape);
-                if (webglCanvas) {
-                    // ctx.clip(); // 「ねじれた葉の裏」を描画するためコメントアウト。ベジェ曲線の範囲外も描画されるようになる。shapeを極端にねじらなければ通常は影響しないところである。このON/OFFをできるようにするかどうかは将来対応。
-                    ctx.drawImage(webglCanvas, 0, 0);
-                    drawn = true;
+                const meshPositions = generateCoonsPatchMesh(shape);
+                if (meshPositions) {
+                    const webglCanvas = renderPatternWebGL(meshPositions, shape.style.fillPattern);
+                    if (webglCanvas) {
+                        ctx.drawImage(webglCanvas, 0, 0);
+                        drawn = true;
+                    }
                 }
             }
             if (!drawn) {
@@ -1915,282 +1743,37 @@ function drawShapeToCanvasContext(ctx, shapeId) {
         }
 
         if (outlineEnabled) {
-            const { leftPoints, rightPoints } = MDMath.generateOutlinePathPoints(shape, state.beziers);
-            if (leftPoints.length > 0) {
-                ctx.beginPath();
-                ctx.moveTo(leftPoints[0].x, leftPoints[0].y);
-                for (let i = 1; i < leftPoints.length; i++) {
-                    ctx.lineTo(leftPoints[i].x, leftPoints[i].y);
+            let outlineDrawn = false;
+            if (shape.style?.strokePattern) {
+                const meshPositions = generateStrokeCoonsPatchMesh(shape);
+                if (meshPositions) {
+                    const webglCanvas = renderPatternWebGL(meshPositions, shape.style.strokePattern);
+                    if (webglCanvas) {
+                        ctx.drawImage(webglCanvas, 0, 0);
+                        outlineDrawn = true;
+                    }
                 }
-                for (let i = rightPoints.length - 1; i >= 0; i--) {
-                    ctx.lineTo(rightPoints[i].x, rightPoints[i].y);
+            }
+            if (!outlineDrawn) {
+                const { leftPoints, rightPoints } = MDMath.generateOutlinePathPoints(shape, state.beziers);
+                if (leftPoints.length > 0) {
+                    ctx.beginPath();
+                    ctx.moveTo(leftPoints[0].x, leftPoints[0].y);
+                    for (let i = 1; i < leftPoints.length; i++) {
+                        ctx.lineTo(leftPoints[i].x, leftPoints[i].y);
+                    }
+                    for (let i = rightPoints.length - 1; i >= 0; i--) {
+                        ctx.lineTo(rightPoints[i].x, rightPoints[i].y);
+                    }
+                    ctx.closePath();
+                    ctx.fillStyle = shape.style?.fill || '#000000';
+                    ctx.fill();
                 }
-                ctx.closePath();
-                ctx.fillStyle = shape.style?.fill || '#000000';
-                ctx.fill();
             }
         }
     }
 
     ctx.restore();
-}
-
-// --- WebGL Pattern Renderer & Coons Patch Math ---
-
-function initWebGLPatternRenderer() {
-    const canvas = document.createElement('canvas');
-    canvas.width = state.canvas.width;
-    canvas.height = state.canvas.height;
-
-    let gl = null;
-    try {
-        gl = canvas.getContext('webgl', { alpha: true, antialias: true }) ||
-            canvas.getContext('experimental-webgl', { alpha: true, antialias: true });
-    } catch (e) {
-        console.warn("WebGL not supported in this environment");
-    }
-
-    if (!gl) return;
-
-    state.patternWebGLCanvas = canvas;
-    state.gl = gl;
-
-    const vsSource = `
-        attribute vec2 a_position;
-        attribute vec2 a_texCoord;
-        uniform vec2 u_resolution;
-        varying vec2 v_texCoord;
-        void main() {
-            vec2 zeroToOne = a_position / u_resolution;
-            vec2 zeroToTwo = zeroToOne * 2.0;
-            vec2 clipSpace = zeroToTwo - 1.0;
-            gl_Position = vec4(clipSpace * vec2(1.0, -1.0), 0.0, 1.0);
-            v_texCoord = a_texCoord;
-        }
-    `;
-
-    const fsSource = `
-        precision mediump float;
-        varying vec2 v_texCoord;
-        uniform sampler2D u_texture;
-        void main() {
-            gl_FragColor = texture2D(u_texture, v_texCoord);
-        }
-    `;
-
-    function compileShader(type, source) {
-        const shader = gl.createShader(type);
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        return shader;
-    }
-
-    const vs = compileShader(gl.VERTEX_SHADER, vsSource);
-    const fs = compileShader(gl.FRAGMENT_SHADER, fsSource);
-
-    const program = gl.createProgram();
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    state.webglProgram = program;
-
-    gl.useProgram(program);
-
-    const GRID_SIZE = 32;
-    const meshIndices = [];
-    const meshTexCoords = [];
-    for (let j = 0; j <= GRID_SIZE; j++) {
-        for (let i = 0; i <= GRID_SIZE; i++) {
-            meshTexCoords.push(i / GRID_SIZE, j / GRID_SIZE);
-        }
-    }
-    for (let j = 0; j < GRID_SIZE; j++) {
-        for (let i = 0; i < GRID_SIZE; i++) {
-            const p0 = j * (GRID_SIZE + 1) + i;
-            const p1 = p0 + 1;
-            const p2 = (j + 1) * (GRID_SIZE + 1) + i;
-            const p3 = p2 + 1;
-            meshIndices.push(p0, p1, p2);
-            meshIndices.push(p2, p1, p3);
-        }
-    }
-
-    const texCoordBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(meshTexCoords), gl.STATIC_DRAW);
-    state.texCoordBuffer = texCoordBuffer;
-
-    const indexBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(meshIndices), gl.STATIC_DRAW);
-    state.indexBuffer = indexBuffer;
-    state.meshIndexCount = meshIndices.length;
-
-    const positionBuffer = gl.createBuffer();
-    state.positionBuffer = positionBuffer;
-
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([200, 200, 200, 255]));
-    state.webglTexture = texture;
-
-    if (typeof Image !== 'undefined') {
-        const image = new Image();
-        image.onload = () => {
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            state.patternTextureLoaded = true;
-        };
-        image.src = 'image/sample.png';
-    }
-}
-
-function interpolatePerimeter(tA, tB, factor) {
-    let diff = tB - tA;
-    if (diff > 0.5) {
-        diff -= 1.0;
-    } else if (diff < -0.5) {
-        diff += 1.0;
-    }
-    let t = tA + factor * diff;
-    return ((t % 1) + 1) % 1;
-}
-
-function getShapePoint(shape, t) {
-    return MDMath.getShapePointAndNormal(shape, t, state.beziers).p;
-}
-
-function initPatternCorners(shape) {
-    const N = shape.bezierIds ? shape.bezierIds.length : 0;
-    if (N === 0) return;
-
-    const numSamples = 100;
-    const samples = [];
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-
-    for (let step = 0; step < numSamples; step++) {
-        const t = step / numSamples;
-        const p = getShapePoint(shape, t);
-        samples.push({ t, x: p.x, y: p.y });
-        if (p.x < minX) minX = p.x;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y < minY) minY = p.y;
-        if (p.y > maxY) maxY = p.y;
-    }
-
-    const targets = {
-        TL: { x: minX, y: minY },
-        TR: { x: maxX, y: minY },
-        BR: { x: maxX, y: maxY },
-        BL: { x: minX, y: maxY }
-    };
-
-    const corners = {};
-    Object.keys(targets).forEach(key => {
-        const target = targets[key];
-        let closestSample = null;
-        let minDist = Infinity;
-        samples.forEach(s => {
-            const dist = Math.hypot(s.x - target.x, s.y - target.y);
-            if (dist < minDist) {
-                minDist = dist;
-                closestSample = s;
-            }
-        });
-        corners[key] = closestSample ? closestSample.t : 0.0;
-    });
-
-    shape.patternCorners = corners;
-}
-
-function generateCoonsPatchMesh(shape) {
-    const corners = shape.patternCorners;
-    if (!corners) return null;
-
-    const tTL = corners.TL;
-    const tTR = corners.TR;
-    const tBR = corners.BR;
-    const tBL = corners.BL;
-
-    const GRID_SIZE = 32;
-    const positions = [];
-
-    const pTL = getShapePoint(shape, tTL);
-    const pTR = getShapePoint(shape, tTR);
-    const pBR = getShapePoint(shape, tBR);
-    const pBL = getShapePoint(shape, tBL);
-
-    for (let j = 0; j <= GRID_SIZE; j++) {
-        const v = j / GRID_SIZE;
-        for (let i = 0; i <= GRID_SIZE; i++) {
-            const u = i / GRID_SIZE;
-
-            const c0 = getShapePoint(shape, interpolatePerimeter(tBL, tBR, u));
-            const c1 = getShapePoint(shape, interpolatePerimeter(tTL, tTR, u));
-            const d0 = getShapePoint(shape, interpolatePerimeter(tBL, tTL, v));
-            const d1 = getShapePoint(shape, interpolatePerimeter(tBR, tTR, v));
-
-            const bx = (1 - u) * (1 - v) * pBL.x +
-                u * (1 - v) * pBR.x +
-                (1 - u) * v * pTL.x +
-                u * v * pTR.x;
-
-            const by = (1 - u) * (1 - v) * pBL.y +
-                u * (1 - v) * pBR.y +
-                (1 - u) * v * pTL.y +
-                u * v * pTR.y;
-
-            const px = (1 - v) * c0.x + v * c1.x + (1 - u) * d0.x + u * d1.x - bx;
-            const py = (1 - v) * c0.y + v * c1.y + (1 - u) * d0.y + u * d1.y - by;
-
-            positions.push(px, py);
-        }
-    }
-
-    return positions;
-}
-
-function renderPatternWebGL(shape) {
-    const gl = state.gl;
-    if (!gl || !state.patternWebGLCanvas) return null;
-
-    const positions = generateCoonsPatchMesh(shape);
-    if (!positions) return null;
-
-    gl.viewport(0, 0, state.patternWebGLCanvas.width, state.patternWebGLCanvas.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
-    gl.useProgram(state.webglProgram);
-
-    const aPosition = gl.getAttribLocation(state.webglProgram, 'a_position');
-    gl.enableVertexAttribArray(aPosition);
-    gl.bindBuffer(gl.ARRAY_BUFFER, state.positionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.DYNAMIC_DRAW);
-    gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
-
-    const aTexCoord = gl.getAttribLocation(state.webglProgram, 'a_texCoord');
-    gl.enableVertexAttribArray(aTexCoord);
-    gl.bindBuffer(gl.ARRAY_BUFFER, state.texCoordBuffer);
-    gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 0, 0);
-
-    const uResolution = gl.getUniformLocation(state.webglProgram, 'u_resolution');
-    gl.uniform2f(uResolution, state.canvas.width, state.canvas.height);
-
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, state.webglTexture);
-
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, state.indexBuffer);
-    gl.drawElements(gl.TRIANGLES, state.meshIndexCount, gl.UNSIGNED_SHORT, 0);
-
-    return state.patternWebGLCanvas;
 }
 
 // --- Pattern Edit Mode Handlers & Helpers ---
@@ -2377,6 +1960,36 @@ function executeCommand(cmdStr) {
                     if (shape) {
                         if (shape.style) {
                             delete shape.style.fillPattern;
+                        }
+                    }
+                });
+                rasterizeInactiveLayers();
+                renderCanvas();
+                pushHistory();
+            }
+        }
+    } else if (command === 'strokepattern') {
+        const patternName = parts[1];
+        if (patternName === 'brush_sample') {
+            if (state.selectedShapeIds.length > 0) {
+                state.selectedShapeIds.forEach(shapeId => {
+                    const shape = state.shapes[shapeId];
+                    if (shape && shape.bezierIds) {
+                        if (!shape.style) shape.style = {};
+                        shape.style.strokePattern = 'brush_sample';
+                    }
+                });
+                rasterizeInactiveLayers();
+                renderCanvas();
+                pushHistory();
+            }
+        } else if (!patternName || patternName === 'none' || patternName === 'clear') {
+            if (state.selectedShapeIds.length > 0) {
+                state.selectedShapeIds.forEach(shapeId => {
+                    const shape = state.shapes[shapeId];
+                    if (shape) {
+                        if (shape.style) {
+                            delete shape.style.strokePattern;
                         }
                     }
                 });
