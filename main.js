@@ -504,6 +504,7 @@ function handleWSlideThicknessStart() {
         shape.strokeWidthData.push(newPoint);
         shape.strokeWidthData.sort((a, b) => a.t - b.t);
         state.thicknessEdit.editIndex = shape.strokeWidthData.indexOf(newPoint);
+        markShapeDirty(shapeId);
     }
 }
 
@@ -549,6 +550,7 @@ function handleWSlideThickness(ctx) {
         let w = shape.strokeWidthData[editIndex].w - ctx.dy * 0.2;
         w = Math.max(0.1, w);
         shape.strokeWidthData[editIndex].w = w;
+        markShapeDirty(shapeId);
         resolveBezierDependencies();
     }
 }
@@ -572,6 +574,7 @@ function handleTMoveThickness(ctx) {
 
         p.t = t;
         state.thicknessEdit.targetT = t;
+        markShapeDirty(shapeId);
         resolveBezierDependencies();
     }
 }
@@ -597,6 +600,7 @@ function handleDeleteThicknessPoint(ctx) {
 
     if (closestIndex >= 0 && shape.strokeWidthData.length > 2) {
         shape.strokeWidthData.splice(closestIndex, 1);
+        markShapeDirty(shapeId);
         resolveBezierDependencies();
         return { pushHistory: true, needsRender: true };
     }
@@ -903,10 +907,10 @@ const keyHandlers = {
             ]
         },
         u: { keydown: { f: handleUndoAction, needsRender: true } }, // Undo
-        '?': { keydown: { f: toggleHelpModal, needsRender: true } }, // ヘルプ表示トグル
-        q: { keydown: { f: handleQuitToGallery, needsRender: false } }, // 保存してギャラリーに戻る
-        '/': { keydown: { f: handleOpenSearch, needsRender: false } }, // 検索モード開始
-        ':': { keydown: { f: handleOpenCommand, needsRender: false } }, // コマンドモード開始
+        '?': { keydown: { f: toggleHelpModal } }, // ヘルプ表示トグル
+        q: { keydown: { f: handleQuitToGallery } }, // 保存してギャラリーに戻る
+        '/': { keydown: { f: handleOpenSearch } }, // 検索モード開始
+        ':': { keydown: { f: handleOpenCommand } }, // コマンドモード開始
         n: { keydown: { f: handleSearchNext, needsRender: true } }, // 検索結果・次
         N: { keydown: { f: handleSearchPrev, needsRender: true } }, // 検索結果・前
         ArrowLeft: { keydown: { f: handleFocusVertexPrev, needsRender: true } }, // 頂点フォーカス前へ
@@ -1145,6 +1149,7 @@ function undo() {
     state.selectedLayerId = data.selectedLayerId && state.shapes[data.selectedLayerId] ? data.selectedLayerId : null;
 
     resolveBezierDependencies();
+    clearAllCaches();
     renderCanvas();
 } /* undo */
 
@@ -1161,6 +1166,7 @@ function redo() {
     state.selectedLayerId = data.selectedLayerId && state.shapes[data.selectedLayerId] ? data.selectedLayerId : null;
 
     resolveBezierDependencies();
+    clearAllCaches();
     renderCanvas(); /* redo */
 } /* redo */
 
@@ -1384,6 +1390,13 @@ function updateBezier(id) {
         x: Math.min(...xs), y: Math.min(...ys),
         w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys)
     };
+
+    // ベジェが更新されたため、このベジェを使用するShapeのキャッシュをDirtyにする
+    Object.values(state.shapes).forEach(shape => {
+        if (shape.bezierIds && shape.bezierIds.includes(id)) {
+            markShapeDirty(shape.id);
+        }
+    });
 } /* updateBezier */
 
 function resolveBezierDependencies() {
@@ -1629,6 +1642,32 @@ function createWrap() {
 } /* createWrap */
 let currentRenderCoonsCount = 0;
 
+const shapeRenderCaches = {}; // shapeId -> { canvas, ctx, isDirty }
+
+function getShapeCache(shapeId) {
+    if (!shapeRenderCaches[shapeId]) {
+        const canvas = document.createElement('canvas');
+        canvas.width = state.canvas.width;
+        canvas.height = state.canvas.height;
+        const ctx = canvas.getContext('2d');
+        shapeRenderCaches[shapeId] = { canvas, ctx, isDirty: true };
+    }
+    return shapeRenderCaches[shapeId];
+}
+
+function markShapeDirty(shapeId) {
+    const cache = shapeRenderCaches[shapeId];
+    if (cache) {
+        cache.isDirty = true;
+    }
+}
+
+function clearAllCaches() {
+    for (const id in shapeRenderCaches) {
+        shapeRenderCaches[id].isDirty = true;
+    }
+}
+
 function renderCanvas() {
     const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     currentRenderCoonsCount = 0;
@@ -1710,78 +1749,90 @@ function drawShapeToCanvasContext(ctx, shapeId) {
         ctx.globalAlpha *= (shape.style?.opacity ?? 1);
         shape.childIds?.forEach(childId => drawShapeToCanvasContext(ctx, childId));
     } else if (shape.bezierIds) {
-        const fillEnabled = shape.style?.fillEnabled !== false;
-        const outlineEnabled = shape.style?.outline !== false;
+        const cache = getShapeCache(shapeId);
+        if (cache.isDirty) {
+            const cCtx = cache.ctx;
+            cCtx.clearRect(0, 0, state.canvas.width, state.canvas.height);
+            cCtx.save();
 
-        ctx.globalAlpha = shape.style?.opacity ?? 1;
+            const fillEnabled = shape.style?.fillEnabled !== false;
+            const outlineEnabled = shape.style?.outline !== false;
 
-        if (fillEnabled) {
-            ctx.save();
-            ctx.beginPath();
-            let first = true;
-            shape.bezierIds.forEach((bid, i) => {
-                const b = state.beziers[bid];
-                if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
-                const v = b.controlPoints.map(cp => cp.v);
-                if (first) {
-                    ctx.moveTo(v[0].x, v[0].y);
-                    first = false;
-                } else {
-                    ctx.lineTo(v[0].x, v[0].y);
+            cCtx.globalAlpha = shape.style?.opacity ?? 1;
+
+            if (fillEnabled) {
+                cCtx.save();
+                cCtx.beginPath();
+                let first = true;
+                shape.bezierIds.forEach((bid, i) => {
+                    const b = state.beziers[bid];
+                    if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
+                    const v = b.controlPoints.map(cp => cp.v);
+                    if (first) {
+                        cCtx.moveTo(v[0].x, v[0].y);
+                        first = false;
+                    } else {
+                        cCtx.lineTo(v[0].x, v[0].y);
+                    }
+                    cCtx.bezierCurveTo(v[1].x, v[1].y, v[2].x, v[2].y, v[3].x, v[3].y);
+                });
+                cCtx.closePath();
+
+                let drawn = false;
+                if (shape.style?.fillPattern) {
+                    currentRenderCoonsCount++;
+                    const meshPositions = generateCoonsPatchMesh(shape);
+                    if (meshPositions) {
+                        const webglCanvas = renderPatternWebGL(meshPositions, shape.style.fillPattern);
+                        if (webglCanvas) {
+                            cCtx.drawImage(webglCanvas, 0, 0);
+                            drawn = true;
+                        }
+                    }
                 }
-                ctx.bezierCurveTo(v[1].x, v[1].y, v[2].x, v[2].y, v[3].x, v[3].y);
-            });
-            ctx.closePath();
+                if (!drawn) {
+                    cCtx.fillStyle = shape.style?.fill || '#000000';
+                    cCtx.fill();
+                }
+                cCtx.restore();
+            }
 
-            let drawn = false;
-            if (shape.style?.fillPattern) {
-                currentRenderCoonsCount++;
-                const meshPositions = generateCoonsPatchMesh(shape);
-                if (meshPositions) {
-                    const webglCanvas = renderPatternWebGL(meshPositions, shape.style.fillPattern);
-                    if (webglCanvas) {
-                        ctx.drawImage(webglCanvas, 0, 0);
-                        drawn = true;
+            if (outlineEnabled) {
+                let outlineDrawn = false;
+                if (shape.style?.strokePattern) {
+                    currentRenderCoonsCount++;
+                    const meshPositions = generateStrokeCoonsPatchMesh(shape);
+                    if (meshPositions) {
+                        const webglCanvas = renderPatternWebGL(meshPositions, shape.style.strokePattern);
+                        if (webglCanvas) {
+                            cCtx.drawImage(webglCanvas, 0, 0);
+                            outlineDrawn = true;
+                        }
+                    }
+                }
+                if (!outlineDrawn) {
+                    const { leftPoints, rightPoints } = MDMath.generateOutlinePathPoints(shape, state.beziers);
+                    if (leftPoints.length > 0) {
+                        cCtx.beginPath();
+                        cCtx.moveTo(leftPoints[0].x, leftPoints[0].y);
+                        for (let i = 1; i < leftPoints.length; i++) {
+                            cCtx.lineTo(leftPoints[i].x, leftPoints[i].y);
+                        }
+                        for (let i = rightPoints.length - 1; i >= 0; i--) {
+                            cCtx.lineTo(rightPoints[i].x, rightPoints[i].y);
+                        }
+                        cCtx.closePath();
+                        cCtx.fillStyle = shape.style?.fill || '#000000';
+                        cCtx.fill();
                     }
                 }
             }
-            if (!drawn) {
-                ctx.fillStyle = shape.style?.fill || '#000000';
-                ctx.fill();
-            }
-            ctx.restore();
+
+            cCtx.restore();
+            cache.isDirty = false;
         }
 
-        if (outlineEnabled) {
-            let outlineDrawn = false;
-            if (shape.style?.strokePattern) {
-                currentRenderCoonsCount++;
-                const meshPositions = generateStrokeCoonsPatchMesh(shape);
-                if (meshPositions) {
-                    const webglCanvas = renderPatternWebGL(meshPositions, shape.style.strokePattern);
-                    if (webglCanvas) {
-                        ctx.drawImage(webglCanvas, 0, 0);
-                        outlineDrawn = true;
-                    }
-                }
-            }
-            if (!outlineDrawn) {
-                const { leftPoints, rightPoints } = MDMath.generateOutlinePathPoints(shape, state.beziers);
-                if (leftPoints.length > 0) {
-                    ctx.beginPath();
-                    ctx.moveTo(leftPoints[0].x, leftPoints[0].y);
-                    for (let i = 1; i < leftPoints.length; i++) {
-                        ctx.lineTo(leftPoints[i].x, leftPoints[i].y);
-                    }
-                    for (let i = rightPoints.length - 1; i >= 0; i--) {
-                        ctx.lineTo(rightPoints[i].x, rightPoints[i].y);
-                    }
-                    ctx.closePath();
-                    ctx.fillStyle = shape.style?.fill || '#000000';
-                    ctx.fill();
-                }
-            }
-        }
+        ctx.drawImage(cache.canvas, 0, 0);
     }
 
     ctx.restore();
@@ -1909,6 +1960,7 @@ function handleTMovePattern(ctx) {
     t = ((t % 1) + 1) % 1;
     shape.patternCorners[key] = t;
     state.patternEdit.targetT = t;
+    markShapeDirty(shapeId);
     resolveBezierDependencies();
 }
 
@@ -1958,6 +2010,7 @@ function executeCommand(cmdStr) {
                         if (!shape.style) shape.style = {};
                         shape.style.fillPattern = 'sample';
                         initPatternCorners(shape);
+                        markShapeDirty(shapeId);
                     }
                 });
                 rasterizeInactiveLayers();
@@ -1971,6 +2024,7 @@ function executeCommand(cmdStr) {
                     if (shape) {
                         if (shape.style) {
                             delete shape.style.fillPattern;
+                            markShapeDirty(shapeId);
                         }
                     }
                 });
@@ -1988,6 +2042,7 @@ function executeCommand(cmdStr) {
                     if (shape && shape.bezierIds) {
                         if (!shape.style) shape.style = {};
                         shape.style.strokePattern = 'brush_sample';
+                        markShapeDirty(shapeId);
                     }
                 });
                 rasterizeInactiveLayers();
@@ -2001,6 +2056,7 @@ function executeCommand(cmdStr) {
                     if (shape) {
                         if (shape.style) {
                             delete shape.style.strokePattern;
+                            markShapeDirty(shapeId);
                         }
                     }
                 });
@@ -2470,6 +2526,7 @@ function openDrawing(id) {
 
         // 依存関係とキャッシュデータの再計算
         resolveBezierDependencies();
+        clearAllCaches();
 
         rasterizeInactiveLayers();
         renderCanvas();
@@ -2512,6 +2569,7 @@ function startNewDrawing() {
     state.scene = [layerId];
     state.selectedLayerId = layerId;
 
+    clearAllCaches();
     rasterizeInactiveLayers();
     renderCanvas();
     pushHistory();
