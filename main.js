@@ -1627,8 +1627,12 @@ function createWrap() {
     pushHistory();
     renderCanvas();
 } /* createWrap */
+let currentRenderCoonsCount = 0;
 
 function renderCanvas() {
+    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    currentRenderCoonsCount = 0;
+
     const svg = document.getElementById('main-svg');
     if (!svg) return;
     svg.innerHTML = `<defs id="main-defs"></defs><g id="viewport" transform="translate(${state.pan.x}, ${state.pan.y}) scale(${state.zoom}) rotate(${state.rotation})"></g>`;
@@ -1660,6 +1664,11 @@ function renderCanvas() {
 
     renderMinimap();
     renderLayerList();
+
+    const duration = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - startTime;
+    if (window.__debug__ && typeof window.__debug__.addMeasure === 'function') {
+        window.__debug__.addMeasure(duration, currentRenderCoonsCount);
+    }
 } /* renderCanvas */
 
 function drawOffscreensToOnscreen(onscreen, offscreens) {
@@ -1726,6 +1735,7 @@ function drawShapeToCanvasContext(ctx, shapeId) {
 
             let drawn = false;
             if (shape.style?.fillPattern) {
+                currentRenderCoonsCount++;
                 const meshPositions = generateCoonsPatchMesh(shape);
                 if (meshPositions) {
                     const webglCanvas = renderPatternWebGL(meshPositions, shape.style.fillPattern);
@@ -1745,6 +1755,7 @@ function drawShapeToCanvasContext(ctx, shapeId) {
         if (outlineEnabled) {
             let outlineDrawn = false;
             if (shape.style?.strokePattern) {
+                currentRenderCoonsCount++;
                 const meshPositions = generateStrokeCoonsPatchMesh(shape);
                 if (meshPositions) {
                     const webglCanvas = renderPatternWebGL(meshPositions, shape.style.strokePattern);

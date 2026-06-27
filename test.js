@@ -215,6 +215,32 @@
         }
     }
 
+    let measures = [];
+
+    function resetMeasure() {
+        measures = [];
+        console.log("Measures reset.");
+    }
+
+    function addMeasure(duration, coonsPatchCount) {
+        measures.push({ duration, coonsPatchCount });
+    }
+
+    function printMeasure() {
+        if (measures.length === 0) {
+            console.log("No samples recorded.");
+            return;
+        }
+        const sampleCount = measures.length;
+        const totalDuration = measures.reduce((sum, m) => sum + m.duration, 0);
+        const totalCoonsPatchCount = measures.reduce((sum, m) => sum + m.coonsPatchCount, 0);
+        const avgDuration = totalDuration / sampleCount;
+        const avgCoonsPatchCount = totalCoonsPatchCount / sampleCount;
+        console.log(`Samples: ${sampleCount}`);
+        console.log(`Avg Duration: ${avgDuration.toFixed(4)} ms`);
+        console.log(`Avg Coons Patch Calls: ${avgCoonsPatchCount.toFixed(4)}`);
+    }
+
     // グローバルデバッグAPIの設定
     window.__debug__ = {
         state: state,
@@ -223,7 +249,10 @@
         importScene,
         emulateDrag,
         emulateKey,
-        checkHashAndLoadTest
+        checkHashAndLoadTest,
+        resetMeasure,
+        addMeasure,
+        printMeasure
     };
 
     // 初期化トリガー
