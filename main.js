@@ -155,6 +155,103 @@ function resizeOffscreenCanvases() {
     }
 }
 
+// IndexedDBから指定されたIDの図面プレビュー画像を非同期ロードし、WebGLテクスチャとして登録する。
+// MEMO: preview Blobは保存時に512x512以内にリサイズされているが、パターンはたいてい小さいのでそのまま使う。
+function loadDrawingTexture(id) {
+    return new Promise((resolve) => {
+        if (!id) {
+            resolve(null);
+            return;
+        }
+        // すでにロード済みの場合は早期解決
+        if (state.webglTextures && state.webglTextures[id]) {
+            resolve(state.webglTextures[id]);
+            return;
+        }
+
+        // デフォルトパターンの場合は init 時のものをロード
+        if (id === 'sample' || id === 'brush_sample') {
+            resolve(state.webglTextures ? state.webglTextures[id] : null);
+            return;
+        }
+
+        if (!db) {
+            resolve(null);
+            return;
+        }
+
+        try {
+            const tx = db.transaction('drawings', 'readonly');
+            const store = tx.objectStore('drawings');
+            const request = store.get(id);
+
+            request.onsuccess = () => {
+                const data = request.result;
+                if (data && data.preview) {
+                    const img = new Image();
+                    let src = '';
+                    let isObjectURL = false;
+
+                    if (data.preview instanceof Blob) {
+                        src = URL.createObjectURL(data.preview);
+                        isObjectURL = true;
+                    } else if (typeof data.preview === 'string') {
+                        src = data.preview;
+                    }
+
+                    img.onload = () => {
+                        const gl = state.gl;
+                        if (gl) {
+                            const texture = gl.createTexture();
+                            gl.bindTexture(gl.TEXTURE_2D, texture);
+                            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                            
+                            const isPowerOf2 = (val) => (val & (val - 1)) === 0;
+                            const isPot = isPowerOf2(img.width) && isPowerOf2(img.height);
+                            if (isPot) {
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                                gl.generateMipmap(gl.TEXTURE_2D);
+                            } else {
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                            }
+
+                            state.webglTextures[id] = texture;
+                        }
+                        if (isObjectURL) {
+                            URL.revokeObjectURL(src);
+                        }
+                        resolve(state.webglTextures[id] || null);
+                    };
+
+                    img.onerror = () => {
+                        if (isObjectURL) {
+                            URL.revokeObjectURL(src);
+                        }
+                        resolve(null);
+                    };
+
+                    img.src = src;
+                } else {
+                    resolve(null);
+                }
+            };
+
+            request.onerror = () => {
+                resolve(null);
+            };
+        } catch (e) {
+            console.warn(`Failed to access drawings database for texture ${id}:`, e);
+            resolve(null);
+        }
+    });
+}
+
 function initEvents() {
     document.getElementById('btn-new-draw').onclick = () => {
         startNewDrawing();
@@ -1237,6 +1334,9 @@ async function handleInputUpdate(event, detail, rawEvent) {
             for (const config of configs) {
                 const conditionMet = !config.cond || config.cond(ctx);
                 if (conditionMet && config.f) {
+                    if (rawEvent && typeof rawEvent.preventDefault === 'function') {
+                        rawEvent.preventDefault();
+                    }
                     const res = await config.f(ctx);
                     if (config.needsRender || (res && res.needsRender)) needsRender = true;
                     if (config.pushHistory || (res && res.pushHistory)) shouldPushHistory = true;
@@ -2343,22 +2443,7 @@ function executeCommand(cmdStr) {
     const command = parts[0];
     if (command === 'fillpattern') {
         const patternName = parts[1];
-        if (patternName === 'sample') {
-            if (state.selectedShapeIds.length > 0) {
-                state.selectedShapeIds.forEach(shapeId => {
-                    const shape = state.shapes[shapeId];
-                    if (shape && shape.bezierIds) {
-                        if (!shape.style) shape.style = {};
-                        shape.style.fillPattern = 'sample';
-                        initPatternCorners(shape);
-                        markShapeDirty(shapeId);
-                    }
-                });
-                rasterizeInactiveLayers();
-                renderCanvas();
-                pushHistory();
-            }
-        } else if (!patternName || patternName === 'none' || patternName === 'clear') {
+        if (!patternName || patternName === 'none' || patternName === 'clear') {
             if (state.selectedShapeIds.length > 0) {
                 state.selectedShapeIds.forEach(shapeId => {
                     const shape = state.shapes[shapeId];
@@ -2373,24 +2458,31 @@ function executeCommand(cmdStr) {
                 renderCanvas();
                 pushHistory();
             }
+        } else {
+            loadDrawingTexture(patternName).then(texture => {
+                if (!texture) {
+                    console.warn(`Could not load pattern texture for ID "${patternName}"`);
+                    return;
+                }
+                if (state.selectedShapeIds.length > 0) {
+                    state.selectedShapeIds.forEach(shapeId => {
+                        const shape = state.shapes[shapeId];
+                        if (shape && shape.bezierIds) {
+                            if (!shape.style) shape.style = {};
+                            shape.style.fillPattern = patternName;
+                            initPatternCorners(shape);
+                            markShapeDirty(shapeId);
+                        }
+                    });
+                    rasterizeInactiveLayers();
+                    renderCanvas();
+                    pushHistory();
+                }
+            });
         }
     } else if (command === 'strokepattern') {
         const patternName = parts[1];
-        if (patternName === 'brush_sample') {
-            if (state.selectedShapeIds.length > 0) {
-                state.selectedShapeIds.forEach(shapeId => {
-                    const shape = state.shapes[shapeId];
-                    if (shape && shape.bezierIds) {
-                        if (!shape.style) shape.style = {};
-                        shape.style.strokePattern = 'brush_sample';
-                        markShapeDirty(shapeId);
-                    }
-                });
-                rasterizeInactiveLayers();
-                renderCanvas();
-                pushHistory();
-            }
-        } else if (!patternName || patternName === 'none' || patternName === 'clear') {
+        if (!patternName || patternName === 'none' || patternName === 'clear') {
             if (state.selectedShapeIds.length > 0) {
                 state.selectedShapeIds.forEach(shapeId => {
                     const shape = state.shapes[shapeId];
@@ -2405,6 +2497,26 @@ function executeCommand(cmdStr) {
                 renderCanvas();
                 pushHistory();
             }
+        } else {
+            loadDrawingTexture(patternName).then(texture => {
+                if (!texture) {
+                    console.warn(`Could not load stroke pattern texture for ID "${patternName}"`);
+                    return;
+                }
+                if (state.selectedShapeIds.length > 0) {
+                    state.selectedShapeIds.forEach(shapeId => {
+                        const shape = state.shapes[shapeId];
+                        if (shape && shape.bezierIds) {
+                            if (!shape.style) shape.style = {};
+                            shape.style.strokePattern = patternName;
+                            markShapeDirty(shapeId);
+                        }
+                    });
+                    rasterizeInactiveLayers();
+                    renderCanvas();
+                    pushHistory();
+                }
+            });
         }
     }
 }
@@ -2813,14 +2925,26 @@ function openDrawing(id) {
         // アクティブなレイヤーを設定
         state.selectedLayerId = state.scene[0];
 
-        // 依存関係とキャッシュデータの再計算
-        resolveBezierDependencies();
-        clearAllCaches();
+        // 依存パターンテクスチャの事前ロード
+        const textureIdsToLoad = new Set();
+        Object.values(state.shapes).forEach(shape => {
+            if (shape && shape.style) {
+                if (shape.style.fillPattern) textureIdsToLoad.add(shape.style.fillPattern);
+                if (shape.style.strokePattern) textureIdsToLoad.add(shape.style.strokePattern);
+            }
+        });
 
-        rasterizeInactiveLayers();
-        renderCanvas();
-        pushHistory();
-        switchView('canvas');
+        const loadPromises = Array.from(textureIdsToLoad).map(id => loadDrawingTexture(id));
+        Promise.all(loadPromises).then(() => {
+            // 依存関係とキャッシュデータの再計算
+            resolveBezierDependencies();
+            clearAllCaches();
+
+            rasterizeInactiveLayers();
+            renderCanvas();
+            pushHistory();
+            switchView('canvas');
+        });
     }; /* onsuccess */
 } /* openDrawing */
 

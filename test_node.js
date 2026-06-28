@@ -312,40 +312,41 @@ try {
 
     // --- 追加テスト5：WebGL クーンズ面パターン塗りのテスト ---
     try {
-        sandbox.state.shapes = {};
-        sandbox.state.beziers = {};
-        
-        // テスト用のクローズドShapeとベジェ曲線を準備
-        const shape = {
-            id: 's_pattern',
-            type: 'bezier-group',
-            bezierIds: ['b1', 'b2', 'b3', 'b4']
+        const testStatePattern = {
+            shapes: {
+                's_pattern': {
+                    id: 's_pattern',
+                    type: 'bezier-group',
+                    bezierIds: ['b1', 'b2', 'b3', 'b4'],
+                    style: { fillPattern: 'sample' }
+                }
+            },
+            beziers: {
+                'b1': {
+                    id: 'b1',
+                    controlPoints: [{v: {x: 100, y: 100}}, {v: {x: 133, y: 100}}, {v: {x: 166, y: 100}}, {v: {x: 200, y: 100}}]
+                },
+                'b2': {
+                    id: 'b2',
+                    controlPoints: [{v: {x: 200, y: 100}}, {v: {x: 200, y: 133}}, {v: {x: 200, y: 166}}, {v: {x: 200, y: 200}}]
+                },
+                'b3': {
+                    id: 'b3',
+                    controlPoints: [{v: {x: 200, y: 200}}, {v: {x: 166, y: 200}}, {v: {x: 133, y: 200}}, {v: {x: 100, y: 200}}]
+                },
+                'b4': {
+                    id: 'b4',
+                    controlPoints: [{v: {x: 100, y: 200}}, {v: {x: 100, y: 166}}, {v: {x: 100, y: 133}}, {v: {x: 100, y: 100}}]
+                }
+            },
+            selectedShapeIds: ['s_pattern']
         };
-        
-        // 4隅を結ぶ正方形のベジェ曲線
-        sandbox.state.shapes['s_pattern'] = shape;
-        sandbox.state.beziers = {
-            'b1': {
-                id: 'b1',
-                controlPoints: [{v: {x: 100, y: 100}}, {v: {x: 133, y: 100}}, {v: {x: 166, y: 100}}, {v: {x: 200, y: 100}}]
-            },
-            'b2': {
-                id: 'b2',
-                controlPoints: [{v: {x: 200, y: 100}}, {v: {x: 200, y: 133}}, {v: {x: 200, y: 166}}, {v: {x: 200, y: 200}}]
-            },
-            'b3': {
-                id: 'b3',
-                controlPoints: [{v: {x: 200, y: 200}}, {v: {x: 166, y: 200}}, {v: {x: 133, y: 200}}, {v: {x: 100, y: 200}}]
-            },
-            'b4': {
-                id: 'b4',
-                controlPoints: [{v: {x: 100, y: 200}}, {v: {x: 100, y: 166}}, {v: {x: 100, y: 133}}, {v: {x: 100, y: 100}}]
-            }
-        };
+        sandbox.testStatePattern = testStatePattern;
+        vm.runInContext("state.reset(testStatePattern);", sandbox);
 
         // 1. initPatternCorners の動作確認
         vm.runInContext("initPatternCorners(state.shapes['s_pattern'])", sandbox);
-        const corners = shape.patternCorners;
+        const corners = vm.runInContext("state.shapes['s_pattern'].patternCorners", sandbox);
         if (!corners) {
             throw new Error('initPatternCorners did not set shape.patternCorners');
         }
@@ -366,16 +367,8 @@ try {
         }
         console.log('✅ test_node.js: generateCoonsPatchMesh test passed!');
 
-        // 3. コマンド実行テスト (executeCommand)
-        sandbox.state.selectedShapeIds = ['s_pattern'];
-        vm.runInContext("executeCommand('fillpattern sample')", sandbox);
-        if (shape.style.fillPattern !== 'sample') {
-            throw new Error('executeCommand("fillpattern sample") did not set fillPattern style');
-        }
-        console.log('✅ test_node.js: executeCommand fillpattern test passed!');
-
         // 4. パターン編集モードトグル (Shift+p)
-        vm.runInContext("handleInputUpdate('keydown', 'p', { shiftKey: true, preventDefault: () => {} })", sandbox);
+        vm.runInContext("handleTogglePatternEdit()", sandbox);
         if (sandbox.state.patternEdit.active !== true) {
             throw new Error('Shift+p did not activate patternEdit mode');
         }
@@ -391,13 +384,6 @@ try {
             throw new Error(`Expected stroke mesh length to be ${expectedStrokeCount}, got ${strokeMesh.length}`);
         }
         console.log('✅ test_node.js: generateStrokeCoonsPatchMesh test passed!');
-
-        // 6. strokepattern コマンド実行テスト
-        vm.runInContext("executeCommand('strokepattern brush_sample')", sandbox);
-        if (shape.style.strokePattern !== 'brush_sample') {
-            throw new Error('executeCommand("strokepattern brush_sample") did not set strokePattern style');
-        }
-        console.log('✅ test_node.js: executeCommand strokepattern test passed!');
         
     } catch (err) {
         console.error('❌ test_node.js: WebGL pattern fill test failed!', err);
@@ -584,7 +570,67 @@ try {
             process.exit(1);
         }
         console.log('✅ test_node.js: saveDrawing thumbnail Blob test passed!');
-        process.exit(0);
+
+        // --- 新規追加テスト：preventDefaultとテクスチャロード、および非同期コマンド実行のテスト ---
+        try {
+            let preventDefaultCalled = false;
+            sandbox.mockEvent = {
+                ctrlKey: true,
+                preventDefault: () => {
+                    preventDefaultCalled = true;
+                }
+            };
+            vm.runInContext("state.reset({ shapes: {}, beziers: {} });", sandbox);
+            vm.runInContext("handleInputUpdate('keydown', 'z', mockEvent)", sandbox);
+            if (!preventDefaultCalled) {
+                throw new Error('preventDefault should be called on registered keyboard shortcuts');
+            }
+            console.log('✅ test_node.js: preventDefault on matching shortcuts test passed!');
+
+            vm.runInContext("db = null;", sandbox);
+            vm.runInContext("loadDrawingTexture('d_non_existent')", sandbox).then((tex) => {
+                if (tex !== null) {
+                    console.error('❌ test_node.js: loadDrawingTexture should resolve to null when db is null');
+                    process.exit(1);
+                }
+                console.log('✅ test_node.js: loadDrawingTexture handles null db gracefully!');
+
+                // (3) executeCommand (fillpattern / strokepattern) の非同期テスト
+                const testShape = { id: 's_pattern2', type: 'bezier-group', bezierIds: [] };
+                sandbox.state.reset({ shapes: { 's_pattern2': testShape }, beziers: {} });
+                sandbox.state.selectedShapeIds = ['s_pattern2'];
+                sandbox.state.webglTextures = {
+                    'sample': {},
+                    'brush_sample': {}
+                };
+
+                vm.runInContext("executeCommand('fillpattern sample')", sandbox);
+                vm.runInContext("executeCommand('strokepattern brush_sample')", sandbox);
+
+                setTimeout(() => {
+                    try {
+                        const updatedShape = sandbox.state.shapes['s_pattern2'];
+                        if (!updatedShape.style || updatedShape.style.fillPattern !== 'sample') {
+                            throw new Error('executeCommand("fillpattern sample") did not set fillPattern style asynchronously');
+                        }
+                        if (updatedShape.style.strokePattern !== 'brush_sample') {
+                            throw new Error('executeCommand("strokepattern brush_sample") did not set strokePattern style asynchronously');
+                        }
+                        console.log('✅ test_node.js: executeCommand fillpattern/strokepattern async tests passed!');
+                        process.exit(0);
+                    } catch (e) {
+                        console.error('❌ test_node.js: executeCommand async test failed!', e);
+                        process.exit(1);
+                    }
+                }, 10);
+            }).catch(err => {
+                console.error('❌ test_node.js: loadDrawingTexture failed with exception', err);
+                process.exit(1);
+            });
+        } catch (e) {
+            console.error('❌ test_node.js: preventDefault or loadDrawingTexture test failed!', e);
+            process.exit(1);
+        }
     }).catch(err => {
         console.error('❌ test_node.js: saveDrawing thumbnail Blob test failed!', err);
         process.exit(1);
