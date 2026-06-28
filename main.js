@@ -68,6 +68,18 @@ const state = {
         underOffscreen: null,
         activeOffscreen: null,
         overOffscreen: null
+    },
+    reset(data) {
+        state.shapes = data.shapes || {};
+        state.beziers = data.beziers || {};
+        state.scene = data.scene || [];
+        state.selectedShapeIds = data.selectedShapeIds || [];
+        state.anchoredShapeIds = data.anchoredShapeIds || [];
+        state.focusedVertex = data.focusedVertex || null;
+        state.interaction.mode = null;
+        state.dragInfo = null;
+        state.history = [];
+        state.historyIndex = -1;
     }
 }; /* state */
 
@@ -136,6 +148,10 @@ function resizeOffscreenCanvases() {
     if (state.canvas.overOffscreen) {
         state.canvas.overOffscreen.width = state.canvas.width;
         state.canvas.overOffscreen.height = state.canvas.height;
+    }
+    if (state.patternWebGLCanvas) {
+        state.patternWebGLCanvas.width = state.canvas.width;
+        state.patternWebGLCanvas.height = state.canvas.height;
     }
 }
 
@@ -438,7 +454,9 @@ function handleCopy(ctx) {
 
     validBezierIds.forEach(bid => {
         const bez = state.beziers[bid];
-        copiedBeziers[bid] = JSON.parse(JSON.stringify(bez));
+        if (bez) {
+            copiedBeziers[bid] = JSON.parse(JSON.stringify(bez));
+        }
     });
 
     if (copiedShapes.length > 0) {
@@ -2766,6 +2784,10 @@ function openDrawing(id) {
         state.shapes = data.shapes || {};
         state.beziers = data.beziers || {};
         state.scene = data.scene || [];
+
+        // 履歴の初期化
+        state.history = [];
+        state.historyIndex = -1;
 
         // キャンバスサイズ設定の復元と UI 同期
         if (data.canvas) {

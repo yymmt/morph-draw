@@ -406,57 +406,52 @@ try {
 
     // --- 新規追加テスト：コピペとグループ変形のテスト ---
     try {
-        vm.runInContext("state.shapes = {}; state.beziers = {}; state.selectedShapeIds = []; state.anchoredShapeIds = [];", sandbox);
-
-        // 1. 円A, 円B、およびそれらを結ぶコネクタC を含むShape構成
-        vm.runInContext("state.shapes['s1'] = { id: 's1', type: 'bezier-group', name: 'circle 1', bezierIds: ['b1'], style: { fill: '#2196F3' } };", sandbox);
-        vm.runInContext("state.shapes['s2'] = { id: 's2', type: 'bezier-group', name: 'circle 2', bezierIds: ['b2'], style: { fill: '#2196F3' } };", sandbox);
-        vm.runInContext("state.shapes['s_conn'] = { id: 's_conn', type: 'bezier-group', name: 'wrap 1', bezierIds: ['b_conn'], style: { fill: '#2196F3' } };", sandbox);
-
-        vm.runInContext(`state.beziers = {
-            'b1': {
-                id: 'b1',
-                generator: { type: 'arc', params: { x: 100, y: 100, r: 50, startAngle: 0, endAngle: 1.57 } },
-                controlPoints: [{v: {x: 100, y: 100}}], boundingBox: { x: 50, y: 50, w: 100, h: 100 }
-            },
-            'b2': {
-                id: 'b2',
-                generator: { type: 'arc', params: { x: 300, y: 300, r: 50, startAngle: 0, endAngle: 1.57 } },
-                controlPoints: [{v: {x: 300, y: 300}}], boundingBox: { x: 250, y: 250, w: 100, h: 100 }
-            },
-            'b_conn': {
-                id: 'b_conn',
-                generator: {
-                    type: 'connector',
-                    params: {
-                        src1: { bezierId: 'b1', t: 0 },
-                        src2: { bezierId: 'b2', t: 0 },
-                        d1: 0.1, d2: 0.1
-                    }
-                },
-                controlPoints: [{v: {x: 100, y: 100}}, {v: {x: 150, y: 150}}, {v: {x: 250, y: 250}}, {v: {x: 300, y: 300}}],
-                boundingBox: { x: 100, y: 100, w: 200, h: 200 }
-            }
-        };`, sandbox);
-
-        // レイヤーの設定
-        vm.runInContext("state.shapes['l1'] = { id: 'l1', type: 'layer', name: 'Layer 1', childIds: ['s1', 's2', 's_conn'] };", sandbox);
-        vm.runInContext("state.selectedLayerId = 'l1';", sandbox);
-
         // (a) 全て選択してコピー＆ペースト
-        sandbox.state.selectedShapeIds = ['s1', 's2', 's_conn'];
+        const testStateA = {
+            shapes: {
+                's1': { id: 's1', type: 'bezier-group', name: 'circle 1', bezierIds: ['b1'], style: { fill: '#2196F3' } },
+                's2': { id: 's2', type: 'bezier-group', name: 'circle 2', bezierIds: ['b2'], style: { fill: '#2196F3' } },
+                's_conn': { id: 's_conn', type: 'bezier-group', name: 'wrap 1', bezierIds: ['b_conn'], style: { fill: '#2196F3' } },
+                'l1': { id: 'l1', type: 'layer', name: 'Layer 1', childIds: ['s1', 's2', 's_conn'] }
+            },
+            beziers: {
+                'b1': {
+                    id: 'b1',
+                    generator: { type: 'arc', params: { x: 100, y: 100, r: 50, startAngle: 0, endAngle: 1.57 } },
+                    controlPoints: [{v: {x: 100, y: 100}}], boundingBox: { x: 50, y: 50, w: 100, h: 100 }
+                },
+                'b2': {
+                    id: 'b2',
+                    generator: { type: 'arc', params: { x: 300, y: 300, r: 50, startAngle: 0, endAngle: 1.57 } },
+                    controlPoints: [{v: {x: 300, y: 300}}], boundingBox: { x: 250, y: 250, w: 100, h: 100 }
+                },
+                'b_conn': {
+                    id: 'b_conn',
+                    generator: {
+                        type: 'connector',
+                        params: {
+                            src1: { bezierId: 'b1', t: 0 },
+                            src2: { bezierId: 'b2', t: 0 },
+                            d1: 0.1, d2: 0.1
+                        }
+                    },
+                    controlPoints: [{v: {x: 100, y: 100}}, {v: {x: 150, y: 150}}, {v: {x: 250, y: 250}}, {v: {x: 300, y: 300}}],
+                    boundingBox: { x: 100, y: 100, w: 200, h: 200 }
+                }
+            },
+            selectedShapeIds: ['s1', 's2', 's_conn']
+        };
+
+        sandbox.testStateA = testStateA;
+        vm.runInContext("state.reset(testStateA); state.selectedLayerId = 'l1';", sandbox);
         vm.runInContext("handleCopy()", sandbox);
-        
-        // ペースト実行
         vm.runInContext("handlePaste()", sandbox);
 
-        // 新しくペーストされた Shape (s_conn の複製) と Bezier の存在アサーション
         const newShapes = Object.values(sandbox.state.shapes).filter(s => s.id !== 's1' && s.id !== 's2' && s.id !== 's_conn' && s.id !== 'l1');
         if (newShapes.length !== 3) {
             throw new Error(`Expected 3 new pasted shapes, got ${newShapes.length}`);
         }
         
-        // 新しいコネクタが、新しく複製された円A', B'を参照しているか確認
         const pastedConn = newShapes.find(s => s.name === 'wrap 1');
         const pastedCircle1 = newShapes.find(s => s.name === 'circle 1');
         const pastedCircle2 = newShapes.find(s => s.name === 'circle 2');
@@ -467,23 +462,35 @@ try {
             throw new Error('Pasted connector does not map to pasted circles');
         }
 
-        // ペースト後は anchoredShapeIds に設定されていること
         if (sandbox.state.anchoredShapeIds.length !== 3) {
             throw new Error(`Expected anchoredShapeIds length to be 3, got ${sandbox.state.anchoredShapeIds.length}`);
         }
         console.log('✅ test_node.js: Copy/Paste with valid connector mapping test passed!');
 
         // (b) コネクタ単体をコピーしようとしたとき、接続先がコピー対象外であるため自身もコピーされないことの検証
-        vm.runInContext(`state.shapes = {
-            'l1': { id: 'l1', type: 'layer', name: 'Layer 1', childIds: ['s1', 's2', 's_conn'] },
-            's1': { id: 's1', type: 'bezier-group', name: 'circle 1', bezierIds: ['b1'] },
-            's2': { id: 's2', type: 'bezier-group', name: 'circle 2', bezierIds: ['b2'] },
-            's_conn': { id: 's_conn', type: 'bezier-group', name: 'wrap 1', bezierIds: ['b_conn'] }
+        const testStateB = {
+            shapes: {
+                'l1': { id: 'l1', type: 'layer', name: 'Layer 1', childIds: ['s1', 's2', 's_conn'] },
+                's1': { id: 's1', type: 'bezier-group', name: 'circle 1', bezierIds: ['b1'] },
+                's2': { id: 's2', type: 'bezier-group', name: 'circle 2', bezierIds: ['b2'] },
+                's_conn': { id: 's_conn', type: 'bezier-group', name: 'wrap 1', bezierIds: ['b_conn'] }
+            },
+            beziers: {
+                'b_conn': {
+                    id: 'b_conn',
+                    generator: {
+                        type: 'connector',
+                        params: {
+                            src1: { bezierId: 'b1', t: 0 },
+                            src2: { bezierId: 'b2', t: 0 }
+                        }
+                    }
+                }
+            },
+            selectedShapeIds: ['s_conn']
         };
-        state.selectedShapeIds = ['s_conn'];
-        state.anchoredShapeIds = [];
-        state.clipboard = null;`, sandbox);
-
+        sandbox.testStateB = testStateB;
+        vm.runInContext("state.reset(testStateB); state.clipboard = null;", sandbox);
         vm.runInContext("handleCopy()", sandbox);
         if (sandbox.state.clipboard !== null) {
             throw new Error('Connector copy should be skipped because dependencies are not selected');
@@ -491,31 +498,33 @@ try {
         console.log('✅ test_node.js: Connection pruning on Copy test passed!');
 
         // (c) 結合バウンズに基づく移動・拡大縮小・回転のテスト
-        vm.runInContext(`state.shapes = {
-            's1': { id: 's1', type: 'bezier-group', name: 'circle 1', bezierIds: ['b1'] },
-            's2': { id: 's2', type: 'bezier-group', name: 'circle 2', bezierIds: ['b2'] }
-        };
-        state.beziers = {
-            'b1': {
-                id: 'b1',
-                generator: { type: 'arc', params: { x: 100, y: 100, r: 50, startAngle: 0, endAngle: 1.57 } },
-                controlPoints: [{v: {x: 100, y: 100}}], boundingBox: { x: 50, y: 50, w: 100, h: 100 }
+        const testStateC = {
+            shapes: {
+                's1': { id: 's1', type: 'bezier-group', name: 'circle 1', bezierIds: ['b1'] },
+                's2': { id: 's2', type: 'bezier-group', name: 'circle 2', bezierIds: ['b2'] }
             },
-            'b2': {
-                id: 'b2',
-                generator: { type: 'arc', params: { x: 300, y: 300, r: 50, startAngle: 0, endAngle: 1.57 } },
-                controlPoints: [{v: {x: 300, y: 300}}], boundingBox: { x: 250, y: 250, w: 100, h: 100 }
-            }
+            beziers: {
+                'b1': {
+                    id: 'b1',
+                    generator: { type: 'arc', params: { x: 100, y: 100, r: 50, startAngle: 0, endAngle: 1.57 } },
+                    controlPoints: [{v: {x: 100, y: 100}}], boundingBox: { x: 50, y: 50, w: 100, h: 100 }
+                },
+                'b2': {
+                    id: 'b2',
+                    generator: { type: 'arc', params: { x: 300, y: 300, r: 50, startAngle: 0, endAngle: 1.57 } },
+                    controlPoints: [{v: {x: 300, y: 300}}], boundingBox: { x: 250, y: 250, w: 100, h: 100 }
+                }
+            },
+            selectedShapeIds: ['s1', 's2']
         };
-        state.selectedShapeIds = ['s1', 's2'];`, sandbox);
+        sandbox.testStateC = testStateC;
+        vm.runInContext("state.reset(testStateC);", sandbox);
         
-        // 結合バウンズのテスト
         const bounds = vm.runInContext("getCombinedBounds(state.selectedShapeIds)", sandbox);
         if (bounds.cx !== 200 || bounds.cy !== 200) {
             throw new Error(`Expected combined bounds center at (200, 200), got (${bounds.cx}, ${bounds.cy})`);
         }
 
-        // 拡大縮小テスト (factor = 2)
         vm.runInContext("scaleShapes(state.selectedShapeIds, 2, 200, 200)", sandbox);
         const b1Scaled = sandbox.state.beziers['b1'].generator.params;
         const b2Scaled = sandbox.state.beziers['b2'].generator.params;
