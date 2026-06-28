@@ -124,6 +124,21 @@ function initOffscreenCanvases() {
     initWebGLPatternRenderer();
 }
 
+function resizeOffscreenCanvases() {
+    if (state.canvas.underOffscreen) {
+        state.canvas.underOffscreen.width = state.canvas.width;
+        state.canvas.underOffscreen.height = state.canvas.height;
+    }
+    if (state.canvas.activeOffscreen) {
+        state.canvas.activeOffscreen.width = state.canvas.width;
+        state.canvas.activeOffscreen.height = state.canvas.height;
+    }
+    if (state.canvas.overOffscreen) {
+        state.canvas.overOffscreen.width = state.canvas.width;
+        state.canvas.overOffscreen.height = state.canvas.height;
+    }
+}
+
 function initEvents() {
     document.getElementById('btn-new-draw').onclick = () => {
         startNewDrawing();
@@ -145,7 +160,7 @@ function initEvents() {
         }
     }; /* btn-toggle-minimap.onclick */
 
-    const svg = document.getElementById('main-svg');
+    const svg = document.getElementById('guide-svg');
     const minimapCanvas = document.getElementById('minimap-canvas');
 
     svg.addEventListener('pointerdown', (e) => {
@@ -214,17 +229,50 @@ function initEvents() {
 
     const drawNameInput = document.getElementById('input-draw-name');
     if (drawNameInput) {
-        drawNameInput.onblur = () => {
-            if (drawNameInput.value.trim() !== '') {
-                state.drawingName = drawNameInput.value.trim();
-                saveDrawing();
-                pushHistory();
-            } else {
-                drawNameInput.value = state.drawingName;
+        drawNameInput.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                const btn = document.getElementById('btn-save-image-settings');
+                if (btn) btn.click();
+                drawNameInput.blur();
             }
         };
-        drawNameInput.onkeydown = (e) => {
-            if (e.key === 'Enter') drawNameInput.blur();
+    }
+
+    const btnSaveImageSettings = document.getElementById('btn-save-image-settings');
+    if (btnSaveImageSettings) {
+        btnSaveImageSettings.onclick = () => {
+            const nameInput = document.getElementById('input-draw-name');
+            const widthInput = document.getElementById('input-canvas-width');
+            const heightInput = document.getElementById('input-canvas-height');
+            
+            let changed = false;
+
+            if (nameInput && nameInput.value.trim() !== '') {
+                const newName = nameInput.value.trim();
+                if (newName !== state.drawingName) {
+                    state.drawingName = newName;
+                    changed = true;
+                }
+            }
+
+            if (widthInput && heightInput) {
+                const w = parseInt(widthInput.value, 10);
+                const h = parseInt(heightInput.value, 10);
+                if (w > 0 && h > 0 && (w !== state.canvas.width || h !== state.canvas.height)) {
+                    state.canvas.width = w;
+                    state.canvas.height = h;
+                    resizeOffscreenCanvases();
+                    clearAllCaches();
+                    rasterizeInactiveLayers();
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                saveDrawing();
+                pushHistory();
+                renderCanvas();
+            }
         };
     }
 
@@ -1710,16 +1758,32 @@ function renderCanvas() {
     const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     currentRenderCoonsCount = 0;
 
-    const svg = document.getElementById('main-svg');
+    const svg = document.getElementById('guide-svg');
     if (!svg) return;
-    svg.innerHTML = `<defs id="main-defs"></defs><g id="viewport" transform="translate(${state.pan.x}, ${state.pan.y}) scale(${state.zoom}) rotate(${state.rotation})"></g>`;
+    svg.innerHTML = `<g id="viewport" transform="translate(${state.pan.x}, ${state.pan.y}) scale(${state.zoom}) rotate(${state.rotation})"></g>`;
     const viewport = document.getElementById('viewport');
-    const defs = document.getElementById('main-defs');
 
-    // activeLayerId に属するShapeのみをメインのSVGに描画
+    // キャンバス全体の境界線を viewport の背景として自動描画
+    const borderRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    borderRect.setAttribute('x', 0);
+    borderRect.setAttribute('y', 0);
+    borderRect.setAttribute('width', state.canvas.width);
+    borderRect.setAttribute('height', state.canvas.height);
+    borderRect.setAttribute('fill', 'none');
+    borderRect.setAttribute('stroke', '#ccc');
+    borderRect.setAttribute('stroke-width', 1);
+    borderRect.setAttribute('stroke-dasharray', '4,4');
+    viewport.appendChild(borderRect);
+
+    // activeLayerId に属するShapeのガイド線をメインのSVGに描画
     const activeLayerId = state.selectedLayerId;
     if (activeLayerId) {
-        renderShape(activeLayerId, viewport, defs);
+        const activeLayer = state.shapes[activeLayerId];
+        if (activeLayer && activeLayer.childIds) {
+            activeLayer.childIds.forEach(childId => {
+                renderGuides(childId, viewport);
+            });
+        }
     }
 
     // アクティブレイヤーをリアルタイムに activeOffscreen に描画
@@ -1729,15 +1793,14 @@ function renderCanvas() {
         drawShapeToCanvasContext(activeCtx, activeLayerId);
     }
 
-    // under-canvas / over-canvas にそれぞれオフスクリーンから転写
+    // under-canvas / active-canvas / over-canvas にそれぞれ対応するオフスクリーンから 1:1 で転写
     const underCanvas = document.getElementById('under-canvas');
+    const activeCanvas = document.getElementById('active-canvas');
     const overCanvas = document.getElementById('over-canvas');
-    if (underCanvas && state.canvas.underOffscreen) {
-        drawOffscreensToOnscreen(underCanvas, [state.canvas.underOffscreen, state.canvas.activeOffscreen]);
-    }
-    if (overCanvas && state.canvas.overOffscreen) {
-        drawOffscreensToOnscreen(overCanvas, [state.canvas.overOffscreen]);
-    }
+
+    drawOffscreenToOnscreen(underCanvas, state.canvas.underOffscreen);
+    drawOffscreenToOnscreen(activeCanvas, state.canvas.activeOffscreen);
+    drawOffscreenToOnscreen(overCanvas, state.canvas.overOffscreen);
 
     renderMinimap();
     renderLayerList();
@@ -1748,7 +1811,8 @@ function renderCanvas() {
     }
 } /* renderCanvas */
 
-function drawOffscreensToOnscreen(onscreen, offscreens) {
+function drawOffscreenToOnscreen(onscreen, offscreen) {
+    if (!onscreen) return;
     const ctx = onscreen.getContext('2d');
     const rect = onscreen.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -1759,6 +1823,8 @@ function drawOffscreensToOnscreen(onscreen, offscreens) {
     }
 
     ctx.clearRect(0, 0, onscreen.width, onscreen.height);
+    if (!offscreen) return;
+
     ctx.save();
     ctx.scale(dpr, dpr);
 
@@ -1767,11 +1833,7 @@ function drawOffscreensToOnscreen(onscreen, offscreens) {
     ctx.scale(state.zoom, state.zoom);
     ctx.rotate(state.rotation * Math.PI / 180);
 
-    offscreens.forEach(offscreen => {
-        if (offscreen) {
-            ctx.drawImage(offscreen, 0, 0);
-        }
-    });
+    ctx.drawImage(offscreen, 0, 0);
     ctx.restore();
 }
 
@@ -2193,7 +2255,7 @@ function renderMinimap() {
     ctx.restore();
 }
 
-function renderShape(id, container, defs, isMinimap = false) {
+function renderGuides(id, container) {
     const shape = state.shapes[id];
     if (!shape) return;
 
@@ -2202,43 +2264,54 @@ function renderShape(id, container, defs, isMinimap = false) {
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
 
-    if (shape.type === 'layer') {
-        g.setAttribute('opacity', shape.style?.opacity ?? 1);
-        shape.childIds.forEach(childId => renderShape(childId, g, defs, isMinimap));
-    } else if (shape.bezierIds) {
-        // 3. ガイド線 (メインSVG描画かつ isMinimap でない場合のみ表示)
-        if (!isMinimap) {
-            const guidePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            let d = '';
-            shape.bezierIds.forEach((bid, i) => {
-                const b = state.beziers[bid];
-                if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
-                const v = b.controlPoints.map(cp => cp.v);
-                if (i === 0) d += `M ${v[0].x},${v[0].y}`;
-                d += ` C ${v[1].x},${v[1].y} ${v[2].x},${v[2].y} ${v[3].x},${v[3].y}`;
-            });
-            d += ' Z';
-            guidePath.setAttribute('d', d);
-            guidePath.setAttribute('fill', 'none');
-
-            const isSelected = state.selectedShapeIds.includes(shape.id);
-            const isAnchored = state.anchoredShapeIds?.includes(shape.id);
-            let strokeColor = (shape.style.fill || '#2196F3') + '44'; // さらに薄い半透明
-            let strokeWidth = 0.5;
-            if (isSelected) {
-                strokeColor = '#ffeb3b'; // 黄色
-                strokeWidth = 1.5;
-            } else if (isAnchored) {
-                strokeColor = '#ff9800'; // オレンジ
-                strokeWidth = 1.5;
-            }
-            guidePath.setAttribute('stroke', strokeColor);
-            guidePath.setAttribute('stroke-width', strokeWidth);
-            g.appendChild(guidePath);
+    const addLine = (x1, y1, x2, y2, strokeColor, strokeWidth, isDashed = false) => {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+        line.setAttribute('stroke', strokeColor);
+        line.setAttribute('stroke-width', strokeWidth);
+        if (isDashed) {
+            line.setAttribute('stroke-dasharray', '2,2');
         }
+        g.appendChild(line);
+    };
+
+    const addCircle = (cx, cy, r, fillColor, strokeColor, strokeWidth = 1.5) => {
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
+        c.setAttribute('fill', fillColor);
+        c.setAttribute('stroke', strokeColor);
+        c.setAttribute('stroke-width', strokeWidth);
+        g.appendChild(c);
+    };
+
+    if (shape.bezierIds) {
+        // 3. ガイド線
+        const guidePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const v = i => state.beziers[shape.bezierIds[i]].controlPoints.map(cp => cp.v);
+        const ps = (vArr, j) => `${vArr[j].x},${vArr[j].y}`;
+        const d = `M ${ps(v(0), 0)} ` + shape.bezierIds.map((bid, i) => `C ${ps(v(i), 1)} ${ps(v(i), 2)} ${ps(v(i), 3)}`).join(' ') + ' Z';
+
+        guidePath.setAttribute('d', d);
+        guidePath.setAttribute('fill', 'none');
+
+        const isSelected = state.selectedShapeIds.includes(shape.id);
+        const isAnchored = state.anchoredShapeIds?.includes(shape.id);
+        let strokeColor = (shape.style.fill || '#2196F3') + '44'; // 薄い半透明
+        let strokeWidth = 0.5;
+        if (isSelected) {
+            strokeColor = '#ffeb3b'; // 黄色
+            strokeWidth = 1.5;
+        } else if (isAnchored) {
+            strokeColor = '#ff9800'; // オレンジ
+            strokeWidth = 1.5;
+        }
+        guidePath.setAttribute('stroke', strokeColor);
+        guidePath.setAttribute('stroke-width', strokeWidth);
+        g.appendChild(guidePath);
 
         // 頂点選択モード（キーボード駆動のフォーカス調整中）の UI 表示
-        if (!isMinimap && state.focusedVertex && state.focusedVertex.shapeId === shape.id) {
+        if (state.focusedVertex && state.focusedVertex.shapeId === shape.id) {
             const { vertexIdx } = state.focusedVertex;
             if (shape.bezierIds && shape.bezierIds.length > 0) {
                 const bezierIdx = Math.floor(vertexIdx / 2) % shape.bezierIds.length;
@@ -2250,36 +2323,20 @@ function renderShape(id, container, defs, isMinimap = false) {
                     const cpPt = b.controlPoints[isStart ? 1 : 2].v;
 
                     // 1. 調整中の制御線（点線：オレンジ）
-                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    line.setAttribute('x1', vertexPt.x); line.setAttribute('y1', vertexPt.y);
-                    line.setAttribute('x2', cpPt.x); line.setAttribute('y2', cpPt.y);
-                    line.setAttribute('stroke', '#ff9800'); line.setAttribute('stroke-dasharray', '2,2');
-                    line.setAttribute('stroke-width', 1.5);
-                    g.appendChild(line);
+                    addLine(vertexPt.x, vertexPt.y, cpPt.x, cpPt.y, '#ff9800', 1.5, true);
 
                     // 2. 調整中の制御点（小円：オレンジ枠・白塗り）
-                    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    c.setAttribute('cx', cpPt.x); c.setAttribute('cy', cpPt.y); c.setAttribute('r', 4);
-                    c.setAttribute('fill', 'white'); c.setAttribute('stroke', '#ff9800');
-                    c.setAttribute('stroke-width', 1.5);
-                    g.appendChild(c);
+                    addCircle(cpPt.x, cpPt.y, 4, 'white', '#ff9800', 1.5);
 
                     // 3. 調整中の頂点（強調表示：オレンジ色の二重円）
-                    const cOuter = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    cOuter.setAttribute('cx', vertexPt.x); cOuter.setAttribute('cy', vertexPt.y); cOuter.setAttribute('r', 8);
-                    cOuter.setAttribute('fill', 'none'); cOuter.setAttribute('stroke', '#ff9800'); cOuter.setAttribute('stroke-width', 1.5);
-                    g.appendChild(cOuter);
-
-                    const cInner = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    cInner.setAttribute('cx', vertexPt.x); cInner.setAttribute('cy', vertexPt.y); cInner.setAttribute('r', 4);
-                    cInner.setAttribute('fill', '#ff9800');
-                    g.appendChild(cInner);
+                    addCircle(vertexPt.x, vertexPt.y, 8, 'none', '#ff9800', 1.5);
+                    addCircle(vertexPt.x, vertexPt.y, 4, '#ff9800', '#ff9800', 0);
                 }
             }
         }
 
         // 4. 太さ編集モードのインジケータ表示
-        if (!isMinimap && state.thicknessEdit.active && state.selectedShapeIds.includes(shape.id)) {
+        if (state.thicknessEdit.active && state.selectedShapeIds.includes(shape.id)) {
             // (a) 既存データポイントの描画
             if (shape.strokeWidthData) {
                 shape.strokeWidthData.forEach((ptData) => {
@@ -2287,19 +2344,9 @@ function renderShape(id, container, defs, isMinimap = false) {
                     const r = ptData.w / 2;
 
                     // 幅を示す線 (黄色)
-                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    line.setAttribute('x1', p.x - nx * r); line.setAttribute('y1', p.y - ny * r);
-                    line.setAttribute('x2', p.x + nx * r); line.setAttribute('y2', p.y + ny * r);
-                    line.setAttribute('stroke', '#ffeb3b');
-                    line.setAttribute('stroke-width', 2);
-                    g.appendChild(line);
-
+                    addLine(p.x - nx * r, p.y - ny * r, p.x + nx * r, p.y + ny * r, '#ffeb3b', 2);
                     // 座標点 (黄色円)
-                    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    c.setAttribute('cx', p.x); c.setAttribute('cy', p.y); c.setAttribute('r', 4);
-                    c.setAttribute('fill', 'white'); c.setAttribute('stroke', '#ffeb3b');
-                    c.setAttribute('stroke-width', 1.5);
-                    g.appendChild(c);
+                    addCircle(p.x, p.y, 4, 'white', '#ffeb3b', 1.5);
                 });
             }
 
@@ -2310,28 +2357,14 @@ function renderShape(id, container, defs, isMinimap = false) {
             const r = w / 2;
 
             // 現在の幅を示す線 (赤)
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', p.x - nx * r); line.setAttribute('y1', p.y - ny * r);
-            line.setAttribute('x2', p.x + nx * r); line.setAttribute('y2', p.y + ny * r);
-            line.setAttribute('stroke', '#f44336');
-            line.setAttribute('stroke-width', 2.5);
-            g.appendChild(line);
-
+            addLine(p.x - nx * r, p.y - ny * r, p.x + nx * r, p.y + ny * r, '#f44336', 2.5);
             // 狙う位置の点 (赤色二重円)
-            const cOuter = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            cOuter.setAttribute('cx', p.x); cOuter.setAttribute('cy', p.y); cOuter.setAttribute('r', 6);
-            cOuter.setAttribute('fill', 'none'); cOuter.setAttribute('stroke', '#f44336');
-            cOuter.setAttribute('stroke-width', 1.5);
-            g.appendChild(cOuter);
-
-            const cInner = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            cInner.setAttribute('cx', p.x); cInner.setAttribute('cy', p.y); cInner.setAttribute('r', 3);
-            cInner.setAttribute('fill', '#f44336');
-            g.appendChild(cInner);
+            addCircle(p.x, p.y, 6, 'none', '#f44336', 1.5);
+            addCircle(p.x, p.y, 3, '#f44336', '#f44336', 0);
         }
 
         // 5. パターン編集モードのインジケータ表示
-        if (!isMinimap && state.patternEdit.active && state.selectedShapeIds.includes(shape.id)) {
+        if (state.patternEdit.active && state.selectedShapeIds.includes(shape.id)) {
             // (a) 4隅の既存位置を描画
             if (shape.patternCorners) {
                 ['TL', 'TR', 'BR', 'BL'].forEach((key) => {
@@ -2342,14 +2375,7 @@ function renderShape(id, container, defs, isMinimap = false) {
                     const isSelected = (state.patternEdit.selectedCorner === key);
 
                     // 青色ハンドル円
-                    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    c.setAttribute('cx', p.x);
-                    c.setAttribute('cy', p.y);
-                    c.setAttribute('r', isSelected ? 7 : 5);
-                    c.setAttribute('fill', isSelected ? '#2196F3' : 'white');
-                    c.setAttribute('stroke', '#2196F3');
-                    c.setAttribute('stroke-width', 2);
-                    g.appendChild(c);
+                    addCircle(p.x, p.y, isSelected ? 7 : 5, isSelected ? '#2196F3' : 'white', '#2196F3', 2);
 
                     // ラベル（TL, TR, BR, BL）
                     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -2367,28 +2393,15 @@ function renderShape(id, container, defs, isMinimap = false) {
             const targetT = state.patternEdit.targetT;
             const p = getShapePoint(shape, targetT);
 
-            const cOuter = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            cOuter.setAttribute('cx', p.x);
-            cOuter.setAttribute('cy', p.y);
-            cOuter.setAttribute('r', 6);
-            cOuter.setAttribute('fill', 'none');
-            cOuter.setAttribute('stroke', '#f44336');
-            cOuter.setAttribute('stroke-width', 1.5);
-            g.appendChild(cOuter);
-
-            const cInner = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            cInner.setAttribute('cx', p.x);
-            cInner.setAttribute('cy', p.y);
-            cInner.setAttribute('r', 3);
-            cInner.setAttribute('fill', '#f44336');
-            g.appendChild(cInner);
+            addCircle(p.x, p.y, 6, 'none', '#f44336', 1.5);
+            addCircle(p.x, p.y, 3, '#f44336', '#f44336', 0);
         }
     } /* shape.bezierIds */
     container.appendChild(g);
-} /* renderShape */
+}
 
 function getSVGPoint(e, element) {
-    const svg = document.getElementById('main-svg');
+    const svg = document.getElementById('guide-svg');
     const el = element || svg;
     const p = svg.createSVGPoint();
     p.x = e.clientX;
@@ -2416,12 +2429,18 @@ function switchView(viewId) {
 async function saveDrawing() {
     if (!state.currentDrawId || !db) return;
 
-    // 1. 512x512 のテンポラリ Canvas を作成し、ハンドル類を含まない純粋なイラスト画像を合成
+    // 1. アスペクト比を保持して 512x512 以内のサイズになるようテンポラリ Canvas のサイズを算出
+    const baseW = state.canvas.width || 800;
+    const baseH = state.canvas.height || 600;
+    const scale = Math.min(512 / baseW, 512 / baseH);
+    const thumbW = Math.round(baseW * scale);
+    const thumbH = Math.round(baseH * scale);
+
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = 512;
-    tempCanvas.height = 512;
+    tempCanvas.width = thumbW;
+    tempCanvas.height = thumbH;
     const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.clearRect(0, 0, 512, 512);
+    tempCtx.clearRect(0, 0, thumbW, thumbH);
 
     // アクティブレイヤーを最新状態で activeOffscreen に描画
     const activeLayerId = state.selectedLayerId;
@@ -2431,10 +2450,10 @@ async function saveDrawing() {
         drawShapeToCanvasContext(activeCtx, activeLayerId);
     }
 
-    // under, active, over の各オフスクリーンを重ねて 512x512 に縮小描画
+    // under, active, over の各オフスクリーンを重ねて縮小描画
     [state.canvas.underOffscreen, state.canvas.activeOffscreen, state.canvas.overOffscreen].forEach(offscreen => {
         if (offscreen) {
-            tempCtx.drawImage(offscreen, 0, 0, offscreen.width, offscreen.height, 0, 0, 512, 512);
+            tempCtx.drawImage(offscreen, 0, 0, offscreen.width, offscreen.height, 0, 0, thumbW, thumbH);
         }
     });
 
@@ -2546,40 +2565,10 @@ function openDrawing(id) {
         state.beziers = data.beziers || {};
         state.scene = data.scene || [];
 
-        // マイグレーション: 新規スタイルプロパティと太さデータの補完
-        Object.values(state.shapes).forEach(shape => {
-            if (shape && shape.type === 'bezier-group') {
-                if (shape.style) {
-                    if (shape.style.outline === undefined) shape.style.outline = true;
-                    if (shape.style.fillEnabled === undefined) shape.style.fillEnabled = true;
-                } else {
-                    shape.style = { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true };
-                }
-                if (!shape.strokeWidthData) {
-                    shape.strokeWidthData = [{ t: 0, w: 10 }, { t: 1, w: 10 }];
-                }
-            }
-        });
+        migrateDrawingData(state.shapes);
 
         // IDカウンタの初期化
         initializeIdCounter();
-
-        // マイグレーション: レイヤーが無い場合は、既存のShapeをすべて含むデフォルトレイヤーを自動生成
-        const hasLayers = state.scene.some(sid => state.shapes[sid]?.type === 'layer');
-        if (!hasLayers) {
-            const newLayerId = generateId('l');
-            const oldScene = [...state.scene];
-            state.shapes[newLayerId] = {
-                id: newLayerId,
-                type: 'layer',
-                name: 'Layer 1',
-                childIds: oldScene,
-                style: { opacity: 1 },
-                visible: true,
-                locked: false
-            };
-            state.scene = [newLayerId];
-        }
 
         // アクティブなレイヤーを設定
         state.selectedLayerId = state.scene[0];
@@ -2594,6 +2583,22 @@ function openDrawing(id) {
         switchView('canvas');
     }; /* onsuccess */
 } /* openDrawing */
+
+function migrateDrawingData(shapes) {
+    Object.values(shapes).forEach(shape => {
+        if (shape && shape.type === 'bezier-group') {
+            if (shape.style) {
+                if (shape.style.outline === undefined) shape.style.outline = true;
+                if (shape.style.fillEnabled === undefined) shape.style.fillEnabled = true;
+            } else {
+                shape.style = { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true };
+            }
+            if (!shape.strokeWidthData) {
+                shape.strokeWidthData = [{ t: 0, w: 10 }, { t: 1, w: 10 }];
+            }
+        }
+    });
+}
 
 function startNewDrawing() {
     state.maxDrawingId++;

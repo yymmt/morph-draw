@@ -130,6 +130,15 @@
                             <label class="settings-label" for="input-draw-name">画像名</label>
                             <input id="input-draw-name" class="settings-input" type="text" placeholder="画像名を入力...">
                         </div>
+                        <div class="settings-group">
+                            <label class="settings-label">キャンバスサイズ</label>
+                            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                                <input id="input-canvas-width" class="settings-input" type="number" placeholder="幅" style="width: 100px;">
+                                <span style="color: #666;">x</span>
+                                <input id="input-canvas-height" class="settings-input" type="number" placeholder="高さ" style="width: 100px;">
+                            </div>
+                        </div>
+                        <button id="btn-save-image-settings" class="small-btn" style="width: 100%; padding: 8px 12px; margin-top: 8px;">設定を保存</button>
                     </div>
                     <!-- Common Settings Tab -->
                     <div class="settings-tab-content" id="tab-common">
@@ -142,7 +151,8 @@
 
             <main id="canvas-container">
                 <canvas id="under-canvas"></canvas>
-                <svg id="main-svg" width="100%" height="100%"></svg>
+                <canvas id="active-canvas"></canvas>
+                <svg id="guide-svg" width="100%" height="100%"></svg>
                 <canvas id="over-canvas"></canvas>
                 <div id="thickness-guide" class="hidden">
                     <span>【太さ編集】 t+左右ドラッグ:位置移動 | w+上下ドラッグ:太さ変更 | Shift+t+左右ドラッグ:データ位置変更 | x:データ削除 | Shift+w:終了</span>
