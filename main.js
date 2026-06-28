@@ -386,6 +386,139 @@ function handleRedoAction(ctx) {
     redo();
 }
 
+function handleCopy(ctx) {
+    const shapeIds = Array.from(new Set([...state.selectedShapeIds, ...(state.anchoredShapeIds || [])]));
+    if (shapeIds.length === 0) return;
+
+    const candidateShapeIds = new Set();
+    const candidateBezierIds = new Set();
+
+    shapeIds.forEach(sid => {
+        const shape = state.shapes[sid];
+        if (shape && shape.type !== 'layer') {
+            candidateShapeIds.add(sid);
+            if (shape.bezierIds) {
+                shape.bezierIds.forEach(bid => candidateBezierIds.add(bid));
+            }
+        }
+    });
+
+    const invalidBezierIds = new Set();
+    candidateBezierIds.forEach(bid => {
+        const bez = state.beziers[bid];
+        if (bez && bez.generator && bez.generator.type === 'connector') {
+            const { src1, src2 } = bez.generator.params;
+            if (!candidateBezierIds.has(src1.bezierId) || !candidateBezierIds.has(src2.bezierId)) {
+                invalidBezierIds.add(bid);
+            }
+        }
+    });
+
+    const validShapeIds = [];
+    const validBezierIds = new Set();
+
+    candidateShapeIds.forEach(sid => {
+        const shape = state.shapes[sid];
+        const hasInvalid = shape.bezierIds && shape.bezierIds.some(bid => invalidBezierIds.has(bid));
+        if (!hasInvalid) {
+            validShapeIds.push(sid);
+            if (shape.bezierIds) {
+                shape.bezierIds.forEach(bid => validBezierIds.add(bid));
+            }
+        }
+    });
+
+    const copiedShapes = [];
+    const copiedBeziers = {};
+
+    validShapeIds.forEach(sid => {
+        const shape = state.shapes[sid];
+        copiedShapes.push(JSON.parse(JSON.stringify(shape)));
+    });
+
+    validBezierIds.forEach(bid => {
+        const bez = state.beziers[bid];
+        copiedBeziers[bid] = JSON.parse(JSON.stringify(bez));
+    });
+
+    if (copiedShapes.length > 0) {
+        state.clipboard = {
+            shapes: copiedShapes,
+            beziers: copiedBeziers
+        };
+    }
+}
+
+function handlePaste(ctx) {
+    if (!state.clipboard || !state.clipboard.shapes || state.clipboard.shapes.length === 0) return;
+
+    const shapeIdMap = {};
+    const bezierIdMap = {};
+
+    state.clipboard.shapes.forEach(shape => {
+        const newShapeId = generateId('s');
+        shapeIdMap[shape.id] = newShapeId;
+        
+        if (shape.bezierIds) {
+            shape.bezierIds.forEach(bid => {
+                if (!bezierIdMap[bid]) {
+                    bezierIdMap[bid] = generateId('b');
+                }
+            });
+        }
+    });
+
+    const newShapeIds = [];
+    const offset = 20;
+
+    for (const oldBid in state.clipboard.beziers) {
+        const newBid = bezierIdMap[oldBid];
+        const bez = JSON.parse(JSON.stringify(state.clipboard.beziers[oldBid]));
+        bez.id = newBid;
+
+        if (bez.generator) {
+            if (bez.generator.type === 'arc') {
+                bez.generator.params.x += offset;
+                bez.generator.params.y += offset;
+            } else if (bez.generator.type === 'connector') {
+                const { src1, src2 } = bez.generator.params;
+                src1.bezierId = bezierIdMap[src1.bezierId];
+                src2.bezierId = bezierIdMap[src2.bezierId];
+            }
+        }
+
+        state.beziers[newBid] = bez;
+    }
+
+    const activeLayerId = state.selectedLayerId;
+    const activeLayer = state.shapes[activeLayerId];
+    if (!activeLayer || activeLayer.type !== 'layer') return;
+
+    state.clipboard.shapes.forEach(oldShape => {
+        const newShapeId = shapeIdMap[oldShape.id];
+        const shape = JSON.parse(JSON.stringify(oldShape));
+        shape.id = newShapeId;
+
+        if (shape.bezierIds) {
+            shape.bezierIds = shape.bezierIds.map(bid => bezierIdMap[bid]);
+        }
+
+        state.shapes[newShapeId] = shape;
+        activeLayer.childIds.push(newShapeId);
+        newShapeIds.push(newShapeId);
+        
+        markShapeDirty(newShapeId);
+    });
+
+    state.selectedShapeIds = [];
+    state.anchoredShapeIds = newShapeIds;
+
+    resolveBezierDependencies();
+    rasterizeInactiveLayers();
+    renderCanvas();
+    pushHistory();
+}
+
 // ギャラリーへ戻る（非同期）
 async function handleQuitToGallery(ctx) {
     if (state.view === 'canvas') {
@@ -503,6 +636,7 @@ function handleToggleOutline(ctx) {
             const shape = state.shapes[id];
             if (shape && shape.style) {
                 shape.style.outline = !shape.style.outline;
+                markShapeDirty(id);
             }
         });
         rasterizeInactiveLayers();
@@ -518,6 +652,7 @@ function handleToggleFillEnabled(ctx) {
             const shape = state.shapes[id];
             if (shape && shape.style) {
                 shape.style.fillEnabled = !shape.style.fillEnabled;
+                markShapeDirty(id);
             }
         });
         rasterizeInactiveLayers();
@@ -774,30 +909,33 @@ function handlePointerUpEnd(ctx) {
 
 // 変形処理: 移動
 function handleMove(ctx) {
-    if (state.selectedShapeIds.length > 0) {
-        state.selectedShapeIds.forEach(id => {
-            if (state.shapes[id]) moveShape(id, ctx.dx, ctx.dy);
-        });
+    const targetIds = Array.from(new Set([...state.selectedShapeIds, ...(state.anchoredShapeIds || [])]));
+    if (targetIds.length > 0) {
+        moveShapes(targetIds, ctx.dx, ctx.dy);
     }
 }
 
 // 変形処理: 拡大縮小
 function handleScale(ctx) {
-    if (state.selectedShapeIds.length > 0) {
-        const scaleFactor = 1 + ctx.dx * 0.01;
-        state.selectedShapeIds.forEach(id => {
-            if (state.shapes[id]) scaleShape(id, scaleFactor);
-        });
+    const targetIds = Array.from(new Set([...state.selectedShapeIds, ...(state.anchoredShapeIds || [])]));
+    if (targetIds.length > 0) {
+        const bounds = getCombinedBounds(targetIds);
+        if (bounds) {
+            const scaleFactor = 1 + ctx.dx * 0.01;
+            scaleShapes(targetIds, scaleFactor, bounds.cx, bounds.cy);
+        }
     }
 }
 
 // 変形処理: 回転
 function handleRotate(ctx) {
-    if (state.selectedShapeIds.length > 0) {
-        const angle = ctx.dx * 0.5; // degrees
-        state.selectedShapeIds.forEach(id => {
-            if (state.shapes[id]) rotateShape(id, angle);
-        });
+    const targetIds = Array.from(new Set([...state.selectedShapeIds, ...(state.anchoredShapeIds || [])]));
+    if (targetIds.length > 0) {
+        const bounds = getCombinedBounds(targetIds);
+        if (bounds) {
+            const angle = ctx.dx * 0.5; // degrees
+            rotateShapes(targetIds, angle, bounds.cx, bounds.cy);
+        }
     }
 }
 
@@ -954,7 +1092,6 @@ const keyHandlers = {
                 }
             ]
         },
-        u: { keydown: { f: handleUndoAction, needsRender: true } }, // Undo
         '?': { keydown: { f: toggleHelpModal } }, // ヘルプ表示トグル
         q: { keydown: { f: handleQuitToGallery } }, // 保存してギャラリーに戻る
         '/': { keydown: { f: handleOpenSearch } }, // 検索モード開始
@@ -1011,7 +1148,12 @@ const keyHandlers = {
         }
     },
     ctrl: {
-        r: { keydown: { f: handleRedoAction, needsRender: true } } // Redo
+        z: { keydown: { f: handleUndoAction, needsRender: true } }, // Undo
+        c: { keydown: { f: handleCopy } }, // Copy
+        v: { keydown: { f: handlePaste } } // Paste
+    },
+    ctrl_shift: {
+        z: { keydown: { f: handleRedoAction, needsRender: true } } // Redo
     }
 };
 
@@ -1455,6 +1597,7 @@ function resolveBezierDependencies() {
             for (let i = 0; i < N; i++) {
                 const bid1 = shape.bezierIds[(i - 1 + N) % N];
                 const bid2 = shape.bezierIds[i];
+                if (bid1 === bid2) continue;
                 const bez1 = state.beziers[bid1];
                 const bez2 = state.beziers[bid2];
                 if (bez1 && bez2 && bez1.generator && bez2.generator && bez1.generator.params && bez2.generator.params) {
@@ -1491,40 +1634,98 @@ function resolveBezierDependencies() {
     sorted.forEach(updateBezier);
 } /* resolveBezierDependencies */
 
-function moveShape(id, dx, dy) {
-    const shape = state.shapes[id];
-    if (shape && shape.bezierIds) shape.bezierIds.forEach(bid => {
-        const bez = state.beziers[bid];
-        if (bez && bez.generator && bez.generator.type === 'arc') {
-            bez.generator.params.x += dx; bez.generator.params.y += dy;
-        }
-    }); /* shape.bezierIds.forEach */
-    resolveBezierDependencies();
-} /* moveShape */
+function getCombinedBounds(shapeIds) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let hasValid = false;
 
-function scaleShape(id, factor) {
-    const shape = state.shapes[id];
-    if (shape && shape.bezierIds) shape.bezierIds.forEach(bid => {
-        const bez = state.beziers[bid];
-        if (bez && bez.generator && bez.generator.type === 'arc') {
-            bez.generator.params.r *= factor;
+    shapeIds.forEach(id => {
+        const shape = state.shapes[id];
+        if (!shape || !shape.bezierIds) return;
+        shape.bezierIds.forEach(bid => {
+            const bez = state.beziers[bid];
+            if (bez && bez.boundingBox && bez.boundingBox.w !== undefined) {
+                const box = bez.boundingBox;
+                minX = Math.min(minX, box.x);
+                maxX = Math.max(maxX, box.x + box.w);
+                minY = Math.min(minY, box.y);
+                maxY = Math.max(maxY, box.y + box.h);
+                hasValid = true;
+            }
+        });
+    });
+
+    if (!hasValid) return null;
+    return {
+        x: minX,
+        y: minY,
+        w: maxX - minX,
+        h: maxY - minY,
+        cx: (minX + maxX) / 2,
+        cy: (minY + maxY) / 2
+    };
+}
+
+function moveShapes(shapeIds, dx, dy) {
+    shapeIds.forEach(id => {
+        const shape = state.shapes[id];
+        if (shape && shape.bezierIds) {
+            shape.bezierIds.forEach(bid => {
+                const bez = state.beziers[bid];
+                if (bez && bez.generator && bez.generator.type === 'arc') {
+                    bez.generator.params.x += dx;
+                    bez.generator.params.y += dy;
+                }
+            });
+            markShapeDirty(id);
         }
     });
     resolveBezierDependencies();
-} /* scaleShape */
+}
 
-function rotateShape(id, angle) {
-    const shape = state.shapes[id];
-    if (shape && shape.bezierIds) shape.bezierIds.forEach(bid => {
-        const bez = state.beziers[bid];
-        if (bez && bez.generator && bez.generator.type === 'arc') {
-            const rad = angle * Math.PI / 180;
-            bez.generator.params.startAngle += rad;
-            bez.generator.params.endAngle += rad;
+function scaleShapes(shapeIds, factor, cx, cy) {
+    shapeIds.forEach(id => {
+        const shape = state.shapes[id];
+        if (shape && shape.bezierIds) {
+            shape.bezierIds.forEach(bid => {
+                const bez = state.beziers[bid];
+                if (bez && bez.generator && bez.generator.type === 'arc') {
+                    const params = bez.generator.params;
+                    params.x = cx + (params.x - cx) * factor;
+                    params.y = cy + (params.y - cy) * factor;
+                    params.r *= factor;
+                }
+            });
+            markShapeDirty(id);
         }
     });
     resolveBezierDependencies();
-} /* rotateShape */
+}
+
+function rotateShapes(shapeIds, angle, cx, cy) {
+    const rad = angle * Math.PI / 180;
+    const cosVal = Math.cos(rad);
+    const sinVal = Math.sin(rad);
+
+    shapeIds.forEach(id => {
+        const shape = state.shapes[id];
+        if (shape && shape.bezierIds) {
+            shape.bezierIds.forEach(bid => {
+                const bez = state.beziers[bid];
+                if (bez && bez.generator && bez.generator.type === 'arc') {
+                    const params = bez.generator.params;
+                    const dx = params.x - cx;
+                    const dy = params.y - cy;
+                    params.x = cx + dx * cosVal - dy * sinVal;
+                    params.y = cy + dx * sinVal + dy * cosVal;
+                    params.startAngle += rad;
+                    params.endAngle += rad;
+                }
+            });
+            markShapeDirty(id);
+        }
+    });
+    resolveBezierDependencies();
+}
 
 function addShapeAt(type, x, y) {
     const id = generateId('s');
@@ -2297,7 +2498,7 @@ function renderGuides(id, container) {
 
         const isSelected = state.selectedShapeIds.includes(shape.id);
         const isAnchored = state.anchoredShapeIds?.includes(shape.id);
-        let strokeColor = (shape.style.fill || '#2196F3') + '44'; // 薄い半透明
+        let strokeColor = ((shape.style && shape.style.fill) || '#2196F3') + '44'; // 薄い半透明
         let strokeWidth = 0.5;
         if (isSelected) {
             strokeColor = '#ffeb3b'; // 黄色
@@ -2476,6 +2677,7 @@ async function saveDrawing() {
         shapes: cleaned.shapes,
         beziers: cleaned.beziers,
         scene: cleaned.scene,
+        canvas: { width: state.canvas.width, height: state.canvas.height }, // キャンバスサイズを保存
         preview: previewBlob, // Blob オブジェクトを直接保存
         updatedAt: Date.now()
     });
@@ -2565,6 +2767,22 @@ function openDrawing(id) {
         state.beziers = data.beziers || {};
         state.scene = data.scene || [];
 
+        // キャンバスサイズ設定の復元と UI 同期
+        if (data.canvas) {
+            state.canvas.width = data.canvas.width || 800;
+            state.canvas.height = data.canvas.height || 600;
+        } else {
+            state.canvas.width = 800;
+            state.canvas.height = 600;
+        }
+        const widthInput = document.getElementById('input-canvas-width');
+        const heightInput = document.getElementById('input-canvas-height');
+        if (widthInput && heightInput) {
+            widthInput.value = state.canvas.width;
+            heightInput.value = state.canvas.height;
+        }
+        resizeOffscreenCanvases();
+
         migrateDrawingData(state.shapes);
 
         // IDカウンタの初期化
@@ -2619,6 +2837,17 @@ function startNewDrawing() {
     state.history = [];
     state.historyIndex = -1;
     state.nextIdCounter = 1;
+
+    // キャンバスサイズの初期化と UI 同期
+    state.canvas.width = 800;
+    state.canvas.height = 600;
+    const widthInput = document.getElementById('input-canvas-width');
+    const heightInput = document.getElementById('input-canvas-height');
+    if (widthInput && heightInput) {
+        widthInput.value = 800;
+        heightInput.value = 600;
+    }
+    resizeOffscreenCanvases();
 
     // デフォルトレイヤーの作成
     const layerId = generateId('l');
