@@ -4,6 +4,7 @@
 const state = {
     view: 'gallery',
     currentDrawId: null,
+    drawingType: 'canvas', // 新規：キャンバスの種類 ('canvas' | 'pattern' | 'import_image')
     // 【データ管理システムの設計方針】
     // shapes（図形実体）と beziers（ベジェ曲線）をネストさせずにフラットなマップとして
     // 分離・管理しています。これにより以下のメリットが得られます：
@@ -80,6 +81,7 @@ const state = {
         state.dragInfo = null;
         state.history = [];
         state.historyIndex = -1;
+        state.drawingType = 'canvas';
     }
 }; /* state */
 
@@ -254,9 +256,43 @@ function loadDrawingTexture(id) {
 }
 
 function initEvents() {
-    document.getElementById('btn-new-draw').onclick = () => {
-        startNewDrawing();
-    }; /* btn-new-draw.onclick */
+    const btnNewDraw = document.getElementById('btn-new-draw');
+    const newDrawMenu = document.getElementById('new-draw-menu');
+
+    if (btnNewDraw && newDrawMenu) {
+        btnNewDraw.onclick = (e) => {
+            e.stopPropagation();
+            newDrawMenu.classList.toggle('hidden');
+        };
+
+        const btnNewCanvas = document.getElementById('btn-new-canvas');
+        if (btnNewCanvas) {
+            btnNewCanvas.onclick = (e) => {
+                newDrawMenu.classList.add('hidden');
+                startNewDrawing('canvas');
+            };
+        }
+
+        const btnNewPattern = document.getElementById('btn-new-pattern');
+        if (btnNewPattern) {
+            btnNewPattern.onclick = (e) => {
+                newDrawMenu.classList.add('hidden');
+                startNewDrawing('pattern');
+            };
+        }
+
+        const btnNewImport = document.getElementById('btn-new-import');
+        if (btnNewImport) {
+            btnNewImport.onclick = (e) => {
+                newDrawMenu.classList.add('hidden');
+                importImageFile();
+            };
+        }
+
+        window.addEventListener('click', () => {
+            newDrawMenu.classList.add('hidden');
+        });
+    }
 
     document.getElementById('btn-back-gallery').onclick = async () => {
         await saveDrawing();
@@ -2805,6 +2841,7 @@ async function saveDrawing() {
     await store.put({
         id: state.currentDrawId,
         name: state.drawingName || 'Untitled',
+        type: state.drawingType || 'canvas',
         shapes: cleaned.shapes,
         beziers: cleaned.beziers,
         scene: cleaned.scene,
@@ -2836,13 +2873,18 @@ function loadGallery() {
 let activeGalleryUrls = [];
 
 function renderGalleryGrid(items) {
-    const list = document.getElementById('gallery-list');
+    const listCanvas = document.getElementById('gallery-list-canvas');
+    const listPattern = document.getElementById('gallery-list-pattern');
+    const listImport = document.getElementById('gallery-list-import');
 
     // 古いオブジェクトURLを解放してメモリリークを防ぐ
     activeGalleryUrls.forEach(url => URL.revokeObjectURL(url));
     activeGalleryUrls = [];
 
-    list.innerHTML = '';
+    if (listCanvas) listCanvas.innerHTML = '';
+    if (listPattern) listPattern.innerHTML = '';
+    if (listImport) listImport.innerHTML = '';
+
     items.sort((a, b) => b.updatedAt - a.updatedAt).forEach(item => {
         const card = document.createElement('div');
         card.className = 'gallery-card';
@@ -2863,13 +2905,33 @@ function renderGalleryGrid(items) {
                 ${imgSrc ? `<img src="${imgSrc}" alt="preview">` : ''}
             </div>
             <div class="card-info">
-                <span>${item.name || ('Drawing ' + item.id)}</span>
+                <div class="card-title-group">
+                    <span class="card-name">${item.name || ('Drawing ' + item.id)}</span>
+                    <span class="card-id-badge">${item.id}</span>
+                </div>
                 <button class="btn-card-delete" data-id="${item.id}"><i class="bi bi-trash"></i></button>
             </div>
         `; /* card.innerHTML */
-        card.onclick = () => openDrawing(item.id);
-        card.querySelector('.btn-card-delete').onclick = (e) => deleteDrawing(item.id, e);
-        list.appendChild(card);
+
+        const type = item.type || 'canvas';
+        if (type === 'import_image') {
+            card.style.cursor = 'default';
+        } else {
+            card.onclick = () => openDrawing(item.id);
+        }
+
+        const deleteBtn = card.querySelector('.btn-card-delete');
+        if (deleteBtn) {
+            deleteBtn.onclick = (e) => deleteDrawing(item.id, e);
+        }
+
+        if (type === 'pattern' && listPattern) {
+            listPattern.appendChild(card);
+        } else if (type === 'import_image' && listImport) {
+            listImport.appendChild(card);
+        } else if (listCanvas) {
+            listCanvas.appendChild(card);
+        }
     }); /* items.forEach */
 } /* renderGalleryGrid */
 
@@ -2889,6 +2951,7 @@ function openDrawing(id) {
     request.onsuccess = () => {
         const data = request.result;
         state.currentDrawId = data.id;
+        state.drawingType = data.type || 'canvas';
         state.drawingName = data.name || `Drawing ${data.id}`;
         const nameInput = document.getElementById('input-draw-name');
         if (nameInput) {
@@ -2965,10 +3028,90 @@ function migrateDrawingData(shapes) {
     });
 }
 
-function startNewDrawing() {
+function resizeImageToBlob(file, maxWidth, maxHeight) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                const tempCanvas = document.createElement('canvas');
+                let w = img.width;
+                let h = img.height;
+                const scale = Math.min(maxWidth / w, maxHeight / h);
+                const thumbW = Math.round(w * scale);
+                const thumbH = Math.round(h * scale);
+
+                tempCanvas.width = thumbW;
+                tempCanvas.height = thumbH;
+                const ctx = tempCanvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, thumbW, thumbH);
+                tempCanvas.toBlob((blob) => {
+                    resolve(blob);
+                }, 'image/png');
+            };
+            img.onerror = () => resolve(null);
+            img.src = event.target.result;
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+    });
+}
+
+function importImageFile() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png, image/jpeg';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const previewBlob = await resizeImageToBlob(file, 512, 512);
+        if (!previewBlob) return;
+
+        state.maxDrawingId++;
+        const newId = `d${state.maxDrawingId}`;
+        const name = file.name;
+
+        const img = await new Promise((resolve) => {
+            const i = new Image();
+            i.onload = () => resolve(i);
+            i.onerror = () => resolve(null);
+            i.src = URL.createObjectURL(file);
+        });
+
+        const width = img ? img.width : 800;
+        const height = img ? img.height : 600;
+        if (img) URL.revokeObjectURL(img.src);
+
+        const tx = db.transaction('drawings', 'readwrite');
+        const store = tx.objectStore('drawings');
+
+        await store.put({
+            id: newId,
+            name: name,
+            type: 'import_image',
+            shapes: {},
+            beziers: {},
+            scene: [],
+            canvas: { width, height },
+            preview: previewBlob,
+            updatedAt: Date.now()
+        });
+
+        loadGallery();
+    };
+    input.click();
+}
+
+function startNewDrawing(type = 'canvas') {
     state.maxDrawingId++;
     state.currentDrawId = `d${state.maxDrawingId}`;
-    state.drawingName = `Drawing ${state.currentDrawId}`;
+    state.drawingType = type;
+    if (type === 'pattern') {
+        state.drawingName = `Pattern ${state.currentDrawId}`;
+    } else {
+        state.drawingName = `Drawing ${state.currentDrawId}`;
+    }
     const nameInput = document.getElementById('input-draw-name');
     if (nameInput) {
         nameInput.value = state.drawingName;
