@@ -38,6 +38,17 @@ const state = {
         activeOffscreen: null,
         overOffscreen: null
     },
+    input: {
+        keys: {},
+        pointer: { x: 0, y: 0 },
+        dragStart: null,
+        isPointerDown: false,
+        isHoveringMinimap: false
+    },
+    minimap: {
+        zoom: 1.0
+    },
+    webglTextures: {},
     reset(data) {
         state.shapes = data.shapes || {};
         state.beziers = data.beziers || {};
@@ -51,6 +62,10 @@ const state = {
         state.history = [];
         state.historyIndex = -1;
         state.drawingType = 'canvas';
+        state.input.keys = {};
+        state.input.pointer = { x: 0, y: 0 };
+        state.input.dragStart = null;
+        state.input.isPointerDown = false;
     }
 }; /* state */
 
