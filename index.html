@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MorphDraw</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&family=Noto+Sans+JP:wght@100..900&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/ress/dist/ress.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="style.css?v=76">
+</head>
+
+<body>
+    <div id="app">
+        <!-- Gallery View -->
+        <div id="view-gallery" class="view active">
+            <header class="toolbar-top">
+                <h1 class="logo">MorphDraw</h1>
+                <div class="new-draw-dropdown">
+                    <button id="btn-new-draw" class="icon-btn"><i class="bi bi-plus-lg"></i></button>
+                    <div id="new-draw-menu" class="dropdown-menu hidden">
+                        <button id="btn-new-canvas" class="dropdown-item"><i class="bi bi-palette"></i> キャンバス</button>
+                        <button id="btn-new-pattern" class="dropdown-item"><i class="bi bi-grid-3x3"></i> パターン</button>
+                        <button id="btn-new-import" class="dropdown-item"><i class="bi bi-image"></i> 取込画像</button>
+                    </div>
+                </div>
+            </header>
+            <div id="gallery-container">
+                <div class="gallery-section">
+                    <h2 class="gallery-section-title">キャンバス</h2>
+                    <div id="gallery-list-canvas" class="gallery-grid"></div>
+                </div>
+                <div class="gallery-section">
+                    <h2 class="gallery-section-title">パターン</h2>
+                    <div id="gallery-list-pattern" class="gallery-grid"></div>
+                </div>
+                <div class="gallery-section">
+                    <h2 class="gallery-section-title">取込画像</h2>
+                    <div id="gallery-list-import" class="gallery-grid"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Canvas View -->
+        <div id="view-canvas" class="view">
+            <aside class="toolbar-left">
+                <button id="btn-back-gallery" class="icon-btn"><i class="bi bi-chevron-left"></i></button>
+                <hr>
+                <button id="btn-toggle-settings" class="icon-btn"><i class="bi bi-gear"></i></button>
+            </aside>
+
+            <!-- Settings Panel -->
+            <aside id="settings-panel" class="collapsed">
+                <div class="settings-tabs">
+                    <button class="settings-tab-btn active" data-tab="help">ヘルプ</button>
+                    <button class="settings-tab-btn" data-tab="image">画像設定</button>
+                    <button class="settings-tab-btn" data-tab="common">共通設定</button>
+                </div>
+                <div class="settings-content">
+                    <!-- Help Tab -->
+                    <div class="settings-tab-content active" id="tab-help">
+                        <table class="help-table">
+                            <thead>
+                                <tr>
+                                    <th>キー</th>
+                                    <th>アクション</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><kbd>/</kbd></td>
+                                    <td>検索モード（vi風）</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>n</kbd> / <kbd>N</kbd></td>
+                                    <td>検索結果の次/前を選択</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Tab</kbd></td>
+                                    <td>選択図形内のハンドルを順にフォーカス</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>a</kbd></td>
+                                    <td>アンカートグル（頂点フォーカス中は追加待機）</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Enter</kbd></td>
+                                    <td>頂点追加（Shape割り込み）の決定</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>ArrowLeft/Right</kbd></td>
+                                    <td>接続点（頂点）の選択フォーカス</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Escape</kbd></td>
+                                    <td>頂点フォーカス解除</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>m</kbd> / <kbd>r</kbd> / <kbd>s</kbd></td>
+                                    <td>全体移動 / 回転 / 拡大縮小</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>t</kbd> / <kbd>d</kbd></td>
+                                    <td>t値スライド / 接線距離dの調整</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>c</kbd> / <kbd>w</kbd></td>
+                                    <td>円の生成 / Wrap（膜）生成</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>x</kbd></td>
+                                    <td>削除（頂点フォーカス中は頂点削除）</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>u</kbd> / <kbd>Ctrl+r</kbd></td>
+                                    <td>元に戻す (Undo) / やり直し (Redo)</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>q</kbd></td>
+                                    <td>保存してギャラリーに戻る</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Shift+w</kbd></td>
+                                    <td>太さ編集モードへの移行/解除</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Shift+s</kbd></td>
+                                    <td>輪郭の表示トグル</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>Shift+f</kbd></td>
+                                    <td>塗りの表示トグル</td>
+                                </tr>
+                                <tr>
+                                    <td><kbd>?</kbd></td>
+                                    <td>この設定・ヘルプの表示トグル</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Image Settings Tab -->
+                    <div class="settings-tab-content" id="tab-image">
+                        <div class="settings-group">
+                            <label class="settings-label" for="input-draw-name">画像名</label>
+                            <input id="input-draw-name" class="settings-input" type="text" placeholder="画像名を入力...">
+                        </div>
+                        <div class="settings-group">
+                            <label class="settings-label">キャンバスサイズ</label>
+                            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                                <input id="input-canvas-width" class="settings-input" type="number" placeholder="幅" style="width: 100px;">
+                                <span style="color: #666;">x</span>
+                                <input id="input-canvas-height" class="settings-input" type="number" placeholder="高さ" style="width: 100px;">
+                            </div>
+                        </div>
+                        <button id="btn-save-image-settings" class="small-btn" style="width: 100%; padding: 8px 12px; margin-top: 8px;">設定を保存</button>
+                    </div>
+                    <!-- Common Settings Tab -->
+                    <div class="settings-tab-content" id="tab-common">
+                        <div class="settings-group">
+                            <p class="settings-placeholder">共通設定項目（拡張予定）</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <main id="canvas-container">
+                <canvas id="under-canvas"></canvas>
+                <canvas id="active-canvas"></canvas>
+                <svg id="guide-svg" width="100%" height="100%"></svg>
+                <canvas id="over-canvas"></canvas>
+                <div id="thickness-guide" class="hidden">
+                    <span>【太さ編集】 t+左右ドラッグ:位置移動 | w+上下ドラッグ:太さ変更 | Shift+t+左右ドラッグ:データ位置変更 | x:データ削除 | Shift+w:終了</span>
+                </div>
+                <div id="pattern-guide" class="hidden">
+                    <span>【パターン角編集】 t+左右ドラッグ:ターゲット移動（角の自動選択） | Shift+t+左右ドラッグ:選択中の角のパラメータ調整 | Shift+p:終了</span>
+                </div>
+                <div id="search-bar" class="hidden">
+                    <span class="search-prefix">/</span>
+                    <input id="search-input" type="text" placeholder="検索 (レイヤー名/ID/タイプ)...">
+                </div>
+                <div id="command-bar" class="hidden">
+                    <span class="command-prefix">:</span>
+                    <input id="command-input" type="text" placeholder="コマンドを入力... (例: fillpattern sample)">
+                </div>
+            </main>
+
+            <aside id="minimap-panel" class="collapsed">
+                <canvas id="minimap-canvas"></canvas>
+                <div id="layer-panel" class="panel-section">
+                    <div class="panel-header">
+                        <h3>レイヤー</h3>
+                        <button id="btn-add-layer" class="small-btn"><i class="bi bi-plus-lg"></i></button>
+                    </div>
+                    <div id="layer-list" class="layer-list-container"></div>
+                </div>
+                <button id="btn-toggle-minimap" class="toggle-btn"><i class="bi bi-chevron-double-left"></i></button>
+            </aside>
+        </div>
+    </div>
+
+    <script src="mdmath.js?v=79"></script>
+    <script src="webgl_renderer.js?v=80"></script>
+    <script src="main.js?v=87"></script>
+    <script src="test.js?v=86"></script>
+</body>
+
+</html>
