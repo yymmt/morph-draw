@@ -49,6 +49,14 @@ const state = {
         zoom: 1.0
     },
     webglTextures: {},
+    thicknessEdit: {
+        active: false,
+        targetT: 0.0
+    },
+    patternEdit: {
+        active: false,
+        targetT: 0.0
+    },
     reset(data) {
         state.shapes = data.shapes || {};
         state.beziers = data.beziers || {};
@@ -2120,6 +2128,32 @@ function renderCanvas() {
     }
 } /* renderCanvas */
 
+function getPivotPoints() {
+    const targetIds = state.selectedShapeIds;
+    if (targetIds.length === 0) return [];
+
+    if (state.transformPivotMode === 'individual') {
+        return targetIds.map(id => {
+            const shape = state.shapes[id];
+            if (shape && shape.props && shape.props.x !== undefined) {
+                return { x: shape.props.x, y: shape.props.y };
+            }
+            return null;
+        }).filter(Boolean);
+    } else if (state.transformPivotMode === 'active') {
+        const activeId = targetIds[targetIds.length - 1];
+        const shape = state.shapes[activeId];
+        if (shape && shape.props && shape.props.x !== undefined) {
+            return [{ x: shape.props.x, y: shape.props.y }];
+        }
+        const bounds = getCombinedBounds(targetIds);
+        return bounds ? [{ x: bounds.cx, y: bounds.cy }] : [];
+    } else {
+        const bounds = getCombinedBounds(targetIds);
+        return bounds ? [{ x: bounds.cx, y: bounds.cy }] : [];
+    }
+}
+
 function drawOffscreenToOnscreen(onscreen, offscreen) { // MEMO: [ASK] そもそも onscreen と offscreen を分けているのって、チラつき防止のため？ onscreen を 1つの canvas にして offscreen 3枚からの WebGL での転写にすると速かったりする？
     if (!onscreen) return;
     const ctx = onscreen.getContext('2d');
@@ -2389,31 +2423,6 @@ function renderGuides(id, container) {
         guidePath.setAttribute('stroke-width', strokeWidth);
         g.appendChild(guidePath);
 
-        // 頂点選択モード（キーボード駆動のフォーカス調整中）の UI 表示
-        if (state.focusedVertex && state.focusedVertex.shapeId === shape.id) {
-            const { vertexIdx } = state.focusedVertex;
-            if (shape.bezierIds && shape.bezierIds.length > 0) {
-                const bezierIdx = Math.floor(vertexIdx / 2) % shape.bezierIds.length;
-                const bid = shape.bezierIds[bezierIdx];
-                const b = state.beziers[bid];
-                if (b && b.controlPoints && b.controlPoints.length >= 4) {
-                    const isStart = (vertexIdx % 2 === 0);
-                    const vertexPt = b.controlPoints[isStart ? 0 : 3].v;
-                    const cpPt = b.controlPoints[isStart ? 1 : 2].v;
-
-                    // 1. 調整中の制御線（点線：オレンジ）
-                    addLine(vertexPt.x, vertexPt.y, cpPt.x, cpPt.y, '#ff9800', 1.5, true);
-
-                    // 2. 調整中の制御点（小円：オレンジ枠・白塗り）
-                    addCircle(cpPt.x, cpPt.y, 4, 'white', '#ff9800', 1.5);
-
-                    // 3. 調整中の頂点（強調表示：オレンジ色の二重円）
-                    addCircle(vertexPt.x, vertexPt.y, 8, 'none', '#ff9800', 1.5);
-                    addCircle(vertexPt.x, vertexPt.y, 4, '#ff9800', '#ff9800', 0);
-                }
-            }
-        }
-
         // 4. 太さ編集モードのインジケータ表示
         if (state.thicknessEdit.active && state.selectedShapeIds.includes(shape.id)) {
             // (a) 既存データポイントの描画
@@ -2428,15 +2437,6 @@ function renderGuides(id, container) {
                     addCircle(p.x, p.y, 4, 'white', '#ffeb3b', 1.5);
                 });
             }
-
-            // (b) 現在狙っている targetT のインジケータ
-            const targetT = state.thicknessEdit.targetT;
-            const { p, nx, ny } = MDMath.getShapePointAndNormal(shape, targetT, state.beziers);
-            const w = MDMath.getShapeThickness(shape, targetT);
-            const r = w / 2;
-
-            // 現在の幅を示す線 (赤)
-            addLine(p.x - nx * r, p.y - ny * r, p.x + nx * r, p.y + ny * r, '#f44336', 2.5);
             // 狙う位置の点 (赤色二重円)
             addCircle(p.x, p.y, 6, 'none', '#f44336', 1.5);
             addCircle(p.x, p.y, 3, '#f44336', '#f44336', 0);
