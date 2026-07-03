@@ -6,8 +6,17 @@ const MDMath = {
     PI2: Math.PI * 2,
 
     generators: {
-        arc: (params) => {
-            const { x, y, r, startAngle, endAngle } = params;
+        arc: (state, params, bez) => {
+            const parent = state.shapes[bez.parentId];
+            const x = parent ? (parent.props.x ?? 0) : 0;
+            const y = parent ? (parent.props.y ?? 0) : 0;
+            const r = parent ? (parent.props.r ?? 100) : 100;
+            const rotation = parent ? (parent.props.rotation ?? 0) : 0;
+
+            const rotRad = rotation * Math.PI / 180;
+            const startAngle = params.startAngle + rotRad;
+            const endAngle = params.endAngle + rotRad;
+
             const p0 = { x: x + Math.cos(startAngle) * r, y: y + Math.sin(startAngle) * r };
             const p3 = { x: x + Math.cos(endAngle) * r, y: y + Math.sin(endAngle) * r };
             const p1 = {
@@ -20,21 +29,31 @@ const MDMath = {
             };
             return [{ v: p0 }, { v: p1 }, { v: p2 }, { v: p3 }];
         },
-        connector: (state, params) => {
-            const { src1, src2, d1, d2 } = params;
-            const bez1 = state.beziers[src1.bezierId];
-            const bez2 = state.beziers[src2.bezierId];
+        connector: (state, params, bez) => {
+            const { p1, p2 } = params;
+            if (!p1 || !p2) return [];
+
+            const shape1 = state.shapes[p1.shapeId];
+            const shape2 = state.shapes[p2.shapeId];
+            if (!shape1 || !shape2) return [];
+
+            const pt1 = shape1.points?.[p1.pointIdx];
+            const pt2 = shape2.points?.[p2.pointIdx];
+            if (!pt1 || !pt2) return [];
+
+            const bez1 = state.beziers[pt1.bezierId];
+            const bez2 = state.beziers[pt2.bezierId];
             if (!bez1 || !bez2) return [];
 
-            const p0 = MDMath.getPoint(bez1, src1.t);
-            const p3 = MDMath.getPoint(bez2, src2.t);
-            const tan1 = MDMath.getTangent(bez1, src1.t);
-            const tan2 = MDMath.getTangent(bez2, src2.t);
+            const p0 = MDMath.getPoint(bez1, pt1.t);
+            const p3 = MDMath.getPoint(bez2, pt2.t);
+            const tan1 = MDMath.getTangent(bez1, pt1.t);
+            const tan2 = MDMath.getTangent(bez2, pt2.t);
 
-            const p1 = { x: p0.x + tan1.dx * d1, y: p0.y + tan1.dy * d1 };
-            const p2 = { x: p3.x - tan2.dx * d2, y: p3.y - tan2.dy * d2 };
+            const p1_val = { x: p0.x + tan1.dx * p1.d, y: p0.y + tan1.dy * p1.d };
+            const p2_val = { x: p3.x - tan2.dx * p2.d, y: p3.y - tan2.dy * p2.d };
 
-            return [{ v: p0 }, { v: p1 }, { v: p2 }, { v: p3 }];
+            return [{ v: p0 }, { v: p1_val }, { v: p2_val }, { v: p3 }];
         }
     },
 
@@ -64,26 +83,32 @@ const MDMath = {
     },
 
     getShapeThickness: (shape, t) => {
-        const data = shape.strokeWidthData || [{ t: 0, w: 10 }, { t: 1, w: 10 }];
+        const data = shape.strokeWidthData || [];
         if (data.length === 0) return 10;
         if (data.length === 1) return data[0].w;
 
-        if (t <= data[0].t) return data[0].w;
-        if (t >= data[data.length - 1].t) return data[data.length - 1].w;
+        const numPoints = shape.points ? shape.points.length : 5;
 
-        for (let i = 0; i < data.length - 1; i++) {
-            const p1 = data[i];
-            const p2 = data[i + 1];
+        const mapped = data.map(d => {
+            const tVal = numPoints > 1 ? (d.p / (numPoints - 1)) : 0;
+            return { t: tVal, w: d.w };
+        }).sort((a, b) => a.t - b.t);
+
+        if (t <= mapped[0].t) return mapped[0].w;
+        if (t >= mapped[mapped.length - 1].t) return mapped[mapped.length - 1].w;
+
+        for (let i = 0; i < mapped.length - 1; i++) {
+            const p1 = mapped[i];
+            const p2 = mapped[i + 1];
             if (t >= p1.t && t <= p2.t) {
-                const ratio = (t - p1.t) / (p2.t - p1.t);
+                const ratio = (p2.t - p1.t) > 0 ? ((t - p1.t) / (p2.t - p1.t)) : 0;
                 return p1.w + ratio * (p2.w - p1.w);
             }
         }
-        return data[data.length - 1].w;
+        return mapped[mapped.length - 1].w;
     },
 
     generateOutlinePathPoints: (shape, beziers) => {
-        // MEMO: 太さ0の範囲については、計算誤差でわずかにかすれた線が見える場合がありますが、追々、ブラシ機能を拡充するときに最適化などを検討します。
         const leftPoints = [];
         const rightPoints = [];
         const N = shape.bezierIds ? shape.bezierIds.length : 0;
@@ -120,8 +145,13 @@ const MDMath = {
                 const w = MDMath.getShapeThickness(shape, tGlobal);
                 const r = w / 2;
 
-                leftPoints.push({ x: p.x + nx * r, y: p.y + ny * r });
-                rightPoints.push({ x: p.x - nx * r, y: p.y - ny * r });
+                if (w < 0.01) {
+                    leftPoints.push({ x: p.x, y: p.y });
+                    rightPoints.push({ x: p.x, y: p.y });
+                } else {
+                    leftPoints.push({ x: p.x + nx * r, y: p.y + ny * r });
+                    rightPoints.push({ x: p.x - nx * r, y: p.y - ny * r });
+                }
             });
         }
         return { leftPoints, rightPoints };

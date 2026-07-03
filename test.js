@@ -7,9 +7,9 @@
     async function reset() {
         state.shapes = {};
         state.beziers = {};
+        state.layers = {};
         state.scene = [];
         state.selectedShapeIds = [];
-        state.anchoredShapeIds = [];
         state.zoom = 1;
         state.rotation = 0;
         state.pan = { x: 0, y: 0 };
@@ -41,8 +41,8 @@
         return JSON.stringify({
             shapes: state.shapes,
             beziers: state.beziers,
-            scene: state.scene,
-            anchoredShapeIds: state.anchoredShapeIds
+            layers: state.layers,
+            scene: state.scene
         }, typeof stateReplacer !== 'undefined' ? stateReplacer : undefined);
     }
 
@@ -50,17 +50,30 @@
         const data = JSON.parse(jsonStr);
         state.shapes = data.shapes || {};
         state.beziers = data.beziers || {};
+        state.layers = data.layers || {};
         state.scene = data.scene || [];
-        state.anchoredShapeIds = data.anchoredShapeIds || [];
         state.selectedShapeIds = [];
+        
+        // 親IDの紐付け復元
+        Object.entries(state.shapes).forEach(([sid, shape]) => {
+            if (shape.bezierIds) {
+                shape.bezierIds.forEach(bid => {
+                    if (state.beziers[bid]) {
+                        state.beziers[bid].parentId = sid;
+                    }
+                });
+            }
+        });
+
         resolveBezierDependencies();
         if (typeof rasterizeInactiveLayers !== 'undefined') rasterizeInactiveLayers();
         renderCanvas();
+        updatePropertiesPanel();
+        renderLayerList();
     }
 
     /**
      * 操作エミュレーション
-     * 移動操作 'm' は isDrag: false（ドラッグなしマウス移動）を前提とする
      */
     async function emulateDrag(key, startX, startY, deltaX, deltaY, options = {}) {
         const { shift = false, isDrag = false, steps = 5 } = options;
@@ -72,7 +85,6 @@
             preventDefault: () => {}
         };
 
-        // 1. キーダウン
         if (key) {
             state.input.keys[key] = true;
             await handleInputUpdate('keydown', key, rawEvent);
@@ -83,11 +95,10 @@
         }
         state.input.pointer = { x: startX, y: startY };
 
-        // dragInfoのスタート地点初期化（isDrag: false の移動変形時のため）
         if (state.interaction.mode && !isDrag) {
             state.dragInfo = {
                 start: { x: startX, y: startY },
-                type: 'key-hold'
+                type: 'drag'
             };
         }
 
@@ -97,7 +108,6 @@
             await handleInputUpdate('pointerdown', null, rawEvent);
         }
 
-        // 2. pointermove (複数ステップに分けて徐々に動かす)
         for (let i = 1; i <= steps; i++) {
             state.input.pointer = {
                 x: startX + (deltaX * i) / steps,
@@ -106,14 +116,12 @@
             await handleInputUpdate('pointermove', null, rawEvent);
         }
 
-        // 3. pointerup (ドラッグ終了)
         if (isDrag) {
             state.input.isPointerDown = false;
             state.input.dragStart = null;
             await handleInputUpdate('pointerup', null, rawEvent);
         }
 
-        // 4. キーアップ
         if (key) {
             state.input.keys[key] = false;
             await handleInputUpdate('keyup', key, rawEvent);
@@ -145,73 +153,34 @@
         if (!hash.startsWith('#test=')) return;
         const testType = hash.substring(6);
 
-        // 新規キャンバスの開始
         startNewDrawing();
 
         if (testType === 'circle') {
-            // 中央に円を配置して選択状態にする
             addShapeAt('circle', 400, 300);
-            const shapeIds = Object.keys(state.shapes).filter(id => state.shapes[id].type !== 'layer');
+            const shapeIds = Object.keys(state.shapes).filter(id => !state.layers[id]);
             state.selectedShapeIds = shapeIds;
             renderCanvas();
+            updatePropertiesPanel();
+            renderLayerList();
         } else if (testType === 'wrap') {
-            // 円を2つ配置し、1つを選択状態（黄色）、もう1つをアンカー状態（オレンジ）にする
             addShapeAt('circle', 300, 300);
             addShapeAt('circle', 500, 300);
-            
-            const shapeIds = Object.keys(state.shapes).filter(id => state.shapes[id].type !== 'layer');
-            if (shapeIds.length >= 2) {
-                state.selectedShapeIds = [shapeIds[0]];
-                state.anchoredShapeIds = [shapeIds[1]];
-            }
+            const shapeIds = Object.keys(state.shapes).filter(id => !state.layers[id]);
+            state.selectedShapeIds = shapeIds; // 両方選択
             renderCanvas();
+            updatePropertiesPanel();
+            renderLayerList();
         } else if (testType === 'connector') {
-            // 円を2つ配置し、コネクターで接続する
             addShapeAt('circle', 300, 300);
             addShapeAt('circle', 500, 300);
-            
-            const shapeIds = Object.keys(state.shapes).filter(id => state.shapes[id].type !== 'layer');
+            const shapeIds = Object.keys(state.shapes).filter(id => !state.layers[id]);
             if (shapeIds.length >= 2) {
-                state.anchoredShapeIds = [shapeIds[0], shapeIds[1]];
+                state.selectedShapeIds = [shapeIds[0], shapeIds[1]];
                 createWrap();
             }
             renderCanvas();
-        } else if (testType === 'edit-vertex') {
-            // 円を2つ配置し、wrapさせて、そのwrapされたShapeを選択状態にする
-            addShapeAt('circle', 300, 300);
-            addShapeAt('circle', 500, 350);
-            
-            const shapeIds = Object.keys(state.shapes).filter(id => state.shapes[id].name && state.shapes[id].name.startsWith('circle'));
-            if (shapeIds.length >= 2) {
-                state.anchoredShapeIds = [shapeIds[0], shapeIds[1]];
-                createWrap();
-                // 生成されたwrapを選択状態にする
-                const wrapShape = Object.values(state.shapes).find(s => s.name && s.name.startsWith('wrap'));
-                if (wrapShape) {
-                    state.selectedShapeIds = [wrapShape.id];
-                    state.anchoredShapeIds = []; // アンカーは解除
-
-                    // 3つめの円Cを追加
-                    addShapeAt('circle', 400, 500);
-                    const allCircles = Object.keys(state.shapes).filter(id => state.shapes[id].name && state.shapes[id].name.startsWith('circle'));
-                    const circleCId = allCircles.find(id => id !== shapeIds[0] && id !== shapeIds[1]);
-
-                    if (circleCId) {
-                        // 1. wrapのいずれかの頂点選択 (ArrowRightキーを1回押下してフォーカス)
-                        await emulateKey('ArrowRight');
-
-                        // 2. aキーを押下して追加待ち状態にする
-                        await emulateKey('a');
-
-                        // 3. 円Cを選択状態にする
-                        state.selectedShapeIds = [circleCId];
-
-                        // 4. Enterキーを押下
-                        await emulateKey('Enter');
-                    }
-                }
-            }
-            renderCanvas();
+            updatePropertiesPanel();
+            renderLayerList();
         }
     }
 
@@ -241,7 +210,6 @@
         console.log(`Avg Coons Patch Calls: ${avgCoonsPatchCount.toFixed(4)}`);
     }
 
-    // グローバルデバッグAPIの設定
     window.__debug__ = {
         state: state,
         reset,
@@ -255,7 +223,6 @@
         printMeasure
     };
 
-    // 初期化トリガー
     window.addEventListener('hashchange', checkHashAndLoadTest);
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', checkHashAndLoadTest);

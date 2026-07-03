@@ -4,65 +4,33 @@
 const state = {
     view: 'gallery',
     currentDrawId: null,
-    drawingType: 'canvas', // 新規：キャンバスの種類 ('canvas' | 'pattern' | 'import_image')
-    // 【データ管理システムの設計方針】
-    // shapes（図形実体）と beziers（ベジェ曲線）をネストさせずにフラットなマップとして
-    // 分離・管理しています。これにより以下のメリットが得られます：
-    // 1. 依存関係解決 (Dynamic Bezier Network) の高速化: コネクターが他のベジェに依存する際、
-    //    ツリーをスキャンせず state.beziers[id] で一瞬で参照・取得・更新が可能です (DAGの再計算最適化)。
-    // 2. 履歴管理 (Undo/Redo) の簡素化: フラットな構造なため、状態のシリアライズや将来的な
-    //    パッチ（差分）管理が極めてシンプルになります。
+    drawingType: 'canvas', // キャンバスの種類 ('canvas' | 'pattern' | 'import_image')
     shapes: {}, // ID -> Shape
     beziers: {},  // ID -> Bezier
-    scene: [],    // Root level IDs
+    layers: {},   // ID -> Layer
+    scene: [],    // Layer IDs in order
     zoom: 1,
     rotation: 0,
     pan: { x: 0, y: 0 },
     history: [],
     historyIndex: -1,
     selectedShapeIds: [],
-    anchoredShapeIds: [], // アンカーされた図形ID。オレンジ色で表示。
-    focusedVertex: null,   // 現在フォーカスされているベジェ端点（調整ハンドル）。構造: { shapeId, vertexIdx } (vertexIdx: 0〜2N-1)
-    thicknessEdit: {
-        active: false,
-        targetT: 0.0,
-        editIndex: -1
-    },
-    dragInfo: null, // { type: 'move'|'pan'|'key-hold'|'drag', ... }
+    transformPivotMode: 'combined', // 'combined' | 'active' | 'individual'
+    hoveredPoint: null, // { shapeId, pointIdx } hoverしている接続点
+    dragInfo: null, // { type: 'move'|'pan'|'drag', ... }
     interaction: {
-        mode: null, // 'move', 'scale', 'rotate', 'pan'
+        mode: null,
         activeKeys: new Set(),
     },
-    lastHit: null, // レイヤー操作対象特定用
-    lodPrecision: 10, // 編集時10px, 確定時1px
-    lastMousePt: null, // 最新のマウス座標
-    selectedLayerId: null, // 現在アクティブなレイヤーID
-    maxDrawingId: 0, // 既存図面IDの最大値キャッシュ
-    drawingName: '', // 現在開いている図面の名前
+    lastHit: null,
+    lodPrecision: 10,
+    lastMousePt: null,
+    selectedLayerId: null,
+    maxDrawingId: 0,
+    drawingName: '',
     search: {
-        active: false,
-        results: [],
-        currentIndex: -1
+        query: ''
     },
-    patternEdit: {
-        active: false,
-        selectedCorner: 'TL',
-        targetT: 0.0
-    },
-    command: {
-        active: false
-    },
-    input: {
-        keys: {},           // 押されているキーの状態 { 'm': true, ... }
-        pointer: { x: 0, y: 0 }, // 最新のマウス座標
-        dragStart: null,    // ドラッグ開始時のポインタ座標
-        isPointerDown: false, // ポインタが押されているか
-        isHoveringMinimap: false // 新規：ミニマップ上にマウスがあるか
-    },
-    minimap: {
-        zoom: 1.0           // 新規：ミニマップのズーム倍率
-    },
-    webglTextures: {},
     canvas: {
         width: 2000,
         height: 2000,
@@ -73,10 +41,11 @@ const state = {
     reset(data) {
         state.shapes = data.shapes || {};
         state.beziers = data.beziers || {};
+        state.layers = data.layers || {};
         state.scene = data.scene || [];
         state.selectedShapeIds = data.selectedShapeIds || [];
-        state.anchoredShapeIds = data.anchoredShapeIds || [];
-        state.focusedVertex = data.focusedVertex || null;
+        state.transformPivotMode = 'combined';
+        state.hoveredPoint = null;
         state.interaction.mode = null;
         state.dragInfo = null;
         state.history = [];
@@ -85,9 +54,12 @@ const state = {
     }
 }; /* state */
 
-
 function initializeIdCounter() {
-    const allIds = [...Object.keys(state.shapes), ...Object.keys(state.beziers)];
+    const allIds = [
+        ...Object.keys(state.shapes),
+        ...Object.keys(state.beziers),
+        ...Object.keys(state.layers)
+    ];
     const max = Math.max(0, ...allIds.map(id => {
         const m = id?.match(/[0-9]+/);
         return m ? parseInt(m[0], 10) : 0;
@@ -103,7 +75,7 @@ function generateId(prefix) {
 }
 
 function stateReplacer(key, value) {
-    if (key === 'controlPoints' || key === 'samplePointByT' || key === 'boundingBox') {
+    if (key === 'controlPoints' || key === 'samplePointByT' || key === 'boundingBox' || key === 'parentId') {
         return undefined;
     }
     if (typeof value === 'number') {
@@ -111,8 +83,6 @@ function stateReplacer(key, value) {
     }
     return value;
 }
-
-
 
 let db; /* IndexedDB インスタンス */
 
@@ -123,60 +93,43 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initOffscreenCanvases() {
-    state.canvas.underOffscreen = document.createElement('canvas');
-    state.canvas.underOffscreen.width = state.canvas.width;
-    state.canvas.underOffscreen.height = state.canvas.height;
+    const create = () => {
+        const c = document.createElement('canvas');
+        c.width = state.canvas.width;
+        c.height = state.canvas.height;
+        return c;
+    };
+    state.canvas.underOffscreen = create();
+    state.canvas.activeOffscreen = create();
+    state.canvas.overOffscreen = create();
 
-    state.canvas.activeOffscreen = document.createElement('canvas');
-    state.canvas.activeOffscreen.width = state.canvas.width;
-    state.canvas.activeOffscreen.height = state.canvas.height;
-
-    state.canvas.overOffscreen = document.createElement('canvas');
-    state.canvas.overOffscreen.width = state.canvas.width;
-    state.canvas.overOffscreen.height = state.canvas.height;
-
-    initWebGLPatternRenderer();
+    WebGLRenderer.init(state.canvas.width, state.canvas.height);
 }
 
 function resizeOffscreenCanvases() {
-    if (state.canvas.underOffscreen) {
-        state.canvas.underOffscreen.width = state.canvas.width;
-        state.canvas.underOffscreen.height = state.canvas.height;
-    }
-    if (state.canvas.activeOffscreen) {
-        state.canvas.activeOffscreen.width = state.canvas.width;
-        state.canvas.activeOffscreen.height = state.canvas.height;
-    }
-    if (state.canvas.overOffscreen) {
-        state.canvas.overOffscreen.width = state.canvas.width;
-        state.canvas.overOffscreen.height = state.canvas.height;
-    }
-    if (state.patternWebGLCanvas) {
-        state.patternWebGLCanvas.width = state.canvas.width;
-        state.patternWebGLCanvas.height = state.canvas.height;
-    }
+    const resize = (c) => {
+        if (c) { c.width = state.canvas.width; c.height = state.canvas.height; }
+    };
+    resize(state.canvas.underOffscreen);
+    resize(state.canvas.activeOffscreen);
+    resize(state.canvas.overOffscreen);
+    WebGLRenderer.resize(state.canvas.width, state.canvas.height);
 }
 
-// IndexedDBから指定されたIDの図面プレビュー画像を非同期ロードし、WebGLテクスチャとして登録する。
-// MEMO: preview Blobは保存時に512x512以内にリサイズされているが、パターンはたいてい小さいのでそのまま使う。
 function loadDrawingTexture(id) {
     return new Promise((resolve) => {
         if (!id) {
             resolve(null);
             return;
         }
-        // すでにロード済みの場合は早期解決
-        if (state.webglTextures && state.webglTextures[id]) {
-            resolve(state.webglTextures[id]);
+        if (WebGLRenderer.textures && WebGLRenderer.textures[id]) {
+            resolve(WebGLRenderer.textures[id]);
             return;
         }
-
-        // デフォルトパターンの場合は init 時のものをロード
         if (id === 'sample' || id === 'brush_sample') {
-            resolve(state.webglTextures ? state.webglTextures[id] : null);
+            resolve(WebGLRenderer.textures ? WebGLRenderer.textures[id] : null);
             return;
         }
-
         if (!db) {
             resolve(null);
             return;
@@ -202,34 +155,11 @@ function loadDrawingTexture(id) {
                     }
 
                     img.onload = () => {
-                        const gl = state.gl;
-                        if (gl) {
-                            const texture = gl.createTexture();
-                            gl.bindTexture(gl.TEXTURE_2D, texture);
-                            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-                            
-                            const isPowerOf2 = (val) => (val & (val - 1)) === 0;
-                            const isPot = isPowerOf2(img.width) && isPowerOf2(img.height);
-                            if (isPot) {
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-                                gl.generateMipmap(gl.TEXTURE_2D);
-                            } else {
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-                            }
-
-                            state.webglTextures[id] = texture;
-                        }
+                        WebGLRenderer.registerTextureFromImage(id, img);
                         if (isObjectURL) {
                             URL.revokeObjectURL(src);
                         }
-                        resolve(state.webglTextures[id] || null);
+                        resolve(WebGLRenderer.textures[id] || null);
                     };
 
                     img.onerror = () => {
@@ -394,7 +324,7 @@ function initEvents() {
             const nameInput = document.getElementById('input-draw-name');
             const widthInput = document.getElementById('input-canvas-width');
             const heightInput = document.getElementById('input-canvas-height');
-            
+
             let changed = false;
 
             if (nameInput && nameInput.value.trim() !== '') {
@@ -430,63 +360,34 @@ function initEvents() {
         addLayer();
     }; /* btn-add-layer.onclick */
 
-    // 検索入力イベントハンドラ
-    const searchInput = document.getElementById('search-input');
-    if (searchInput) {
-        searchInput.oninput = () => {
-            performSearch(searchInput.value);
-            applySearchResult();
-        };
-        searchInput.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                closeSearchMode(true);
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                closeSearchMode(false);
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                if (state.search.results.length > 0) {
-                    state.search.currentIndex = (state.search.currentIndex + 1) % state.search.results.length;
-                    applySearchResult();
-                }
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                if (state.search.results.length > 0) {
-                    state.search.currentIndex = (state.search.currentIndex - 1 + state.search.results.length) % state.search.results.length;
-                    applySearchResult();
-                }
-            }
-        };
-        searchInput.onblur = () => {
-            setTimeout(() => {
-                if (state.search.active) {
-                    closeSearchMode(true);
-                }
-            }, 200);
+    // レイヤー検索ボックス
+    const layerSearch = document.getElementById('layer-search');
+    if (layerSearch) {
+        layerSearch.oninput = (e) => {
+            state.search.query = e.target.value.toLowerCase().trim();
+            renderLayerList();
         };
     }
 
-    // コマンド入力イベントハンドラ
-    const commandInput = document.getElementById('command-input');
-    if (commandInput) {
-        commandInput.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                closeCommandMode(true);
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                closeCommandMode(false);
-            }
-        };
-        commandInput.onblur = () => {
-            setTimeout(() => {
-                if (state.command.active) {
-                    closeCommandMode(false);
-                }
-            }, 200);
-        };
-    }
+    // 変形ピボットボタン
+    const bindPivotBtn = (id, mode) => {
+        const btn = document.getElementById(id);
+        if (btn) {
+            btn.onclick = () => {
+                document.querySelectorAll('.pivot-btn-group button').forEach(b => {
+                    b.classList.remove('active');
+                    b.style.background = '#888';
+                });
+                btn.classList.add('active');
+                btn.style.background = '#2196F3';
+                state.transformPivotMode = mode;
+                renderCanvas();
+            };
+        }
+    };
+    bindPivotBtn('btn-pivot-combined', 'combined');
+    bindPivotBtn('btn-pivot-active', 'active');
+    bindPivotBtn('btn-pivot-individual', 'individual');
 
     // ミニマップホバー判定の登録
     if (minimapCanvas) {
@@ -610,7 +511,7 @@ function handlePaste(ctx) {
     state.clipboard.shapes.forEach(shape => {
         const newShapeId = generateId('s');
         shapeIdMap[shape.id] = newShapeId;
-        
+
         if (shape.bezierIds) {
             shape.bezierIds.forEach(bid => {
                 if (!bezierIdMap[bid]) {
@@ -658,7 +559,7 @@ function handlePaste(ctx) {
         state.shapes[newShapeId] = shape;
         activeLayer.childIds.push(newShapeId);
         newShapeIds.push(newShapeId);
-        
+
         markShapeDirty(newShapeId);
     });
 
@@ -1023,40 +924,110 @@ function handleTransformEnd(ctx) {
     return { pushHistory: false, needsRender: false };
 }
 
-// pointerdown 時の共通処理
 function handlePointerDownStart(ctx) {
-    if (state.interaction.mode === null) {
-        const hit = findShapeAt(state.input.dragStart);
-        state.lastHit = hit;
-        if (hit) {
-            if (!state.selectedShapeIds.includes(hit.shape.id)) {
+    const pt = state.input.pointer;
+    // 接続点選択モード (pick-point) の場合、hoveredPointを決定
+    if (state.interaction.mode === 'pick-point') {
+        if (state.hoveredPoint) {
+            state.interaction.onPick?.(state.hoveredPoint);
+            state.interaction.mode = null;
+            state.interaction.onPick = null;
+            state.hoveredPoint = null;
+            renderCanvas();
+        }
+        return;
+    }
+
+    const hit = findShapeAt(pt);
+    state.lastHit = hit;
+    if (hit) {
+        if (!state.selectedShapeIds.includes(hit.shape.id)) {
+            if (ctx.rawEvent && ctx.rawEvent.shiftKey) {
+                state.selectedShapeIds.push(hit.shape.id);
+            } else {
                 state.selectedShapeIds = [hit.shape.id];
-                state.focusedVertex = null; // 図形選択変更時に頂点フォーカスをクリア
             }
         }
-    } else {
         state.dragInfo = {
-            start: { ...state.input.dragStart },
-            type: 'drag'
+            type: 'move',
+            start: { ...pt },
+            last: { ...pt }
+        };
+    } else {
+        // 空白をクリックした場合はドラッグ矩形選択を開始
+        state.dragInfo = {
+            type: 'marquee',
+            start: { ...pt },
+            current: { ...pt }
         };
     }
 }
 
-// pointerup 時の共通処理
 function handlePointerUpEnd(ctx) {
     let needsRender = false;
     let pushHistory = false;
 
-    if (state.interaction.mode) {
-        pushHistory = true;
-        needsRender = true;
-    } else if (state.dragInfo && !state.lastHit) {
-        state.selectedShapeIds = [];
-        state.focusedVertex = null; // 頂点フォーカスもクリア
-        needsRender = true;
+    if (state.dragInfo) {
+        if (state.dragInfo.type === 'marquee') {
+            const pt = state.input.pointer;
+            const dx = Math.abs(pt.x - state.dragInfo.start.x);
+            const dy = Math.abs(pt.y - state.dragInfo.start.y);
+            if (dx < 5 && dy < 5) {
+                // 単一クリック扱い
+                state.selectedShapeIds = [];
+            } else {
+                // 矩形選択
+                const rect = {
+                    x1: state.dragInfo.start.x,
+                    y1: state.dragInfo.start.y,
+                    x2: pt.x,
+                    y2: pt.y
+                };
+                const hits = findShapesInMarquee(rect);
+                state.selectedShapeIds = hits;
+                pushHistory = false; // 選択状態のみの変化は履歴に入れない
+            }
+            needsRender = true;
+        } else if (state.dragInfo.type === 'move') {
+            pushHistory = true;
+            needsRender = true;
+        }
     }
     state.dragInfo = null;
+    updatePropertiesPanel();
     return { needsRender, pushHistory };
+}
+
+function findShapesInMarquee(rect) {
+    const minX = Math.min(rect.x1, rect.x2);
+    const maxX = Math.max(rect.x1, rect.x2);
+    const minY = Math.min(rect.y1, rect.y2);
+    const maxY = Math.max(rect.y1, rect.y2);
+
+    const hitIds = [];
+    Object.entries(state.shapes).forEach(([sid, shape]) => {
+        if (state.layers[sid]) return; // レイヤーは除外
+
+        let isHit = false;
+        if (shape.bezierIds) {
+            for (const bid of shape.bezierIds) {
+                const bez = state.beziers[bid];
+                if (bez && bez.samplePointByT) {
+                    for (const pt of Object.values(bez.samplePointByT)) {
+                        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+                            isHit = true;
+                            break;
+                        }
+                    }
+                }
+                if (isHit) break;
+            }
+        }
+        if (isHit) {
+            hitIds.push(sid);
+        }
+    });
+    return hitIds;
 }
 
 // 変形処理: 移動
@@ -1170,181 +1141,37 @@ function handleDDist(ctx) {
     }
 }
 
-// 変形処理: ズーム (メインキャンバス / ミニマップ)
-function handleZoom(ctx) {
-    const zoomFactor = 1 - ctx.dy * 0.01;
-
-    // MEMO: 将来対応として、ズーム操作中にマウスポインタを固定させたい場合は、pointerdownイベントなどのユーザーインタラクションのコールバック内でPointer Lock API (requestPointerLock) を呼び出して制御することを検討する。
-    if (state.input.isHoveringMinimap) {
-        // ミニマップのズーム
-        state.minimap.zoom = Math.max(0.1, Math.min(10, state.minimap.zoom * zoomFactor));
-    } else {
-        // メインキャンバスのズーム (ポインタ座標を中心にズーム)
-        const oldZoom = state.zoom;
-        state.zoom = Math.max(0.1, Math.min(20, state.zoom * zoomFactor));
-
-        // ポインタ座標 (キャンバス座標系)
-        const p = state.input.pointer;
-        state.pan.x += p.x * (oldZoom - state.zoom);
-        state.pan.y += p.y * (oldZoom - state.zoom);
-    }
-}
-
-// キーボードイベントハンドラ定義
-// MEMO この構造(condで実行条件を判定してからfを実行することで、事前に pushHistory, needsRender を決定できる)は気に入っているので、今後ハンドラを追加・修正する際はなるべくこの構造に寄せること。
 const keyHandlers = {
     no_mod: {
-        x: {
-            keydown: [
-                {
-                    cond: () => state.thicknessEdit.active,
-                    f: handleDeleteThicknessPoint, // 太さ編集：データ点削除
-                    pushHistory: true,
-                    needsRender: true
-                },
-                {
-                    cond: () => {
-                        if (!state.focusedVertex) return false;
-                        const shape = state.shapes[state.focusedVertex.shapeId];
-                        return shape && shape.bezierIds && shape.bezierIds.length > 3;
-                    },
-                    f: deleteSelectedVertex, // 頂点削除
-                    pushHistory: true,
-                    needsRender: true
-                },
-                {
-                    cond: () => state.selectedShapeIds.length > 0,
-                    f: deleteSelectedShapes, // 図形削除
-                    pushHistory: true,
-                    needsRender: true
+        x: { keydown: { f: deleteSelectedShapes, pushHistory: true, needsRender: true } },
+        c: { keydown: { f: handleAddCircleStart, needsRender: true } },
+        w: { keydown: { f: handleCreateWrap, pushHistory: true, needsRender: true } },
+        '?': { keydown: { f: toggleHelpModal } },
+        q: { keydown: { f: handleQuitToGallery } },
+        '/': {
+            keydown: {
+                f: (ctx) => {
+                    if (ctx.rawEvent) ctx.rawEvent.preventDefault();
+                    const input = document.getElementById('layer-search');
+                    if (input) {
+                        input.focus();
+                        input.select();
+                    }
                 }
-            ]
-        },
-        c: { keydown: { f: handleAddCircleStart, needsRender: true } }, // 円生成
-        w: {
-            keydown: [
-                {
-                    cond: () => state.thicknessEdit.active,
-                    f: handleTransformStart, // 太さ編集：ドラッグ変形開始
-                    needsRender: true
-                },
-                {
-                    cond: () => !state.thicknessEdit.active,
-                    f: handleCreateWrap, // Wrap生成
-                    pushHistory: true,
-                    needsRender: true
-                }
-            ],
-            keyup: [
-                {
-                    cond: () => state.thicknessEdit.active,
-                    f: handleTransformEnd, // 太さ編集：ドラッグ変形終了
-                    pushHistory: true,
-                    needsRender: true
-                }
-            ]
-        },
-        '?': { keydown: { f: toggleHelpModal } }, // ヘルプ表示トグル
-        q: { keydown: { f: handleQuitToGallery } }, // 保存してギャラリーに戻る
-        '/': { keydown: { f: handleOpenSearch } }, // 検索モード開始
-        ':': { keydown: { f: handleOpenCommand } }, // コマンドモード開始
-        n: { keydown: { f: handleSearchNext, needsRender: true } }, // 検索結果・次
-        N: { keydown: { f: handleSearchPrev, needsRender: true } }, // 検索結果・前
-        ArrowLeft: { keydown: { f: handleFocusVertexPrev, needsRender: true } }, // 頂点フォーカス前へ
-        ArrowRight: { keydown: { f: handleFocusVertexNext, needsRender: true } }, // 頂点フォーカス次へ
-        Escape: { keydown: { f: handleClearVertexFocus, needsRender: true } }, // 頂点フォーカス解除
-        a: { keydown: { f: handleToggleAnchor } }, // アンカートグル / 頂点追加待機
-        Enter: { keydown: { f: handleEnterAction } }, // 頂点割り込み接続決定
-
-        m: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 移動開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 移動終了
-        },
-        s: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 拡大縮小開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 拡大縮小終了
-        },
-        r: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 回転開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 回転終了
-        },
-        t: {
-            keydown: { f: handleTransformStart, needsRender: true }, // t値（または太さ編集t位置）スライド開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // t値（または太さ編集t位置）スライド終了
-        },
-        d: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 接線距離d調整開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 接線距離d調整終了
-        },
-        z: {
-            keydown: { f: handleTransformStart, needsRender: true }, // ズーム開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // ズーム終了
-        }
-    },
-    shift: {
-        W: { keydown: { f: handleToggleThicknessEdit, needsRender: true } }, // 太さ編集モードトグル
-        w: { keydown: { f: handleToggleThicknessEdit, needsRender: true } }, // 太さ編集モードトグル
-        S: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } }, // 輪郭トグル
-        s: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } }, // 輪郭トグル
-        F: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } }, // 塗りトグル
-        f: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } }, // 塗りトグル
-        P: { keydown: { f: handleTogglePatternEdit, needsRender: true } }, // パターン編集モードトグル
-        p: { keydown: { f: handleTogglePatternEdit, needsRender: true } }, // パターン編集モードトグル
-        T: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 最も近い太さデータt移動開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 最も近い太さデータt移動終了
-        },
-        t: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 最も近い太さデータt移動開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 最も近い太さデータt移動終了
+            }
         }
     },
     ctrl: {
-        z: { keydown: { f: handleUndoAction, needsRender: true } }, // Undo
-        c: { keydown: { f: handleCopy } }, // Copy
-        v: { keydown: { f: handlePaste } } // Paste
+        z: { keydown: { f: handleUndoAction, needsRender: true } },
+        c: { keydown: { f: handleCopy } },
+        v: { keydown: { f: handlePaste } }
     },
     ctrl_shift: {
-        z: { keydown: { f: handleRedoAction, needsRender: true } } // Redo
+        z: { keydown: { f: handleRedoAction, needsRender: true } }
     }
 };
 
-// モードごとのポインタ移動イベントハンドラ定義
-const modeHandlers = {
-    move: {
-        pointermove: { f: handleMove, needsRender: true }
-    },
-    scale: {
-        pointermove: { f: handleScale, needsRender: true }
-    },
-    rotate: {
-        pointermove: { f: handleRotate, needsRender: true }
-    },
-    't-slide': {
-        pointermove: { f: handleTSlide, needsRender: true }
-    },
-    'd-dist': {
-        pointermove: { f: handleDDist, needsRender: true }
-    },
-    zoom: {
-        pointermove: { f: handleZoom, needsRender: true }
-    },
-    't-slide-thickness': {
-        pointermove: { f: handleTSlideThickness, needsRender: true }
-    },
-    'w-slide-thickness': {
-        pointermove: { f: handleWSlideThickness, needsRender: true }
-    },
-    't-move-thickness': {
-        pointermove: { f: handleTMoveThickness, needsRender: true }
-    },
-    't-slide-pattern': {
-        pointermove: { f: handleTSlidePattern, needsRender: true }
-    },
-    't-move-pattern': {
-        pointermove: { f: handleTMovePattern, needsRender: true }
-    }
-};
+const modeHandlers = {};
 
 async function handleInputUpdate(event, detail, rawEvent) {
     let needsRender = false;
@@ -1394,16 +1221,52 @@ async function handleInputUpdate(event, detail, rawEvent) {
         else if (event === 'pointermove') {
             if (state.dragInfo) {
                 const pt = state.input.pointer;
-                ctx.dx = pt.x - state.dragInfo.start.x;
-                ctx.dy = pt.y - state.dragInfo.start.y;
+                if (state.dragInfo.type === 'marquee') {
+                    state.dragInfo.current = pt;
+                    needsRender = true;
+                } else if (state.dragInfo.type === 'move') {
+                    ctx.dx = pt.x - state.dragInfo.last.x;
+                    ctx.dy = pt.y - state.dragInfo.last.y;
+                    const targetIds = Array.from(new Set([...state.selectedShapeIds]));
+                    if (targetIds.length > 0 && (ctx.dx !== 0 || ctx.dy !== 0)) {
+                        moveShapes(targetIds, ctx.dx, ctx.dy);
+                        state.dragInfo.last = { ...pt };
+                        needsRender = true;
+                    }
+                }
+            }
 
-                if (ctx.dx !== 0 || ctx.dy !== 0) {
-                    const config = modeHandlers[mode]?.pointermove;
-                    if (config && config.f) {
-                        await config.f(ctx);
-                        state.dragInfo.start = { ...pt };
-                        if (config.needsRender) needsRender = true;
-                        if (config.pushHistory) shouldPushHistory = true;
+            // pick-point モード時の接続点ホバー検出
+            if (state.interaction.mode === 'pick-point') {
+                const pt = state.input.pointer;
+                let closestPt = null;
+                let minDist = 15; // 15pxまで吸着
+
+                Object.entries(state.shapes).forEach(([sid, shape]) => {
+                    if (shape.points) {
+                        shape.points.forEach((p, idx) => {
+                            const bez = state.beziers[p.bezierId];
+                            if (bez) {
+                                const ptReal = MDMath.getPoint(bez, p.t);
+                                const dist = Math.hypot(pt.x - ptReal.x, pt.y - ptReal.y);
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    closestPt = { shapeId: sid, pointIdx: idx };
+                                }
+                            }
+                        });
+                    }
+                });
+
+                if (closestPt) {
+                    if (!state.hoveredPoint || state.hoveredPoint.shapeId !== closestPt.shapeId || state.hoveredPoint.pointIdx !== closestPt.pointIdx) {
+                        state.hoveredPoint = closestPt;
+                        needsRender = true;
+                    }
+                } else {
+                    if (state.hoveredPoint) {
+                        state.hoveredPoint = null;
+                        needsRender = true;
                     }
                 }
             }
@@ -1707,9 +1570,7 @@ function updateBezier(id) {
 
     const generatorFunc = MDMath.generators[bez.generator.type];
     if (generatorFunc) {
-        bez.controlPoints = bez.generator.type === 'connector'
-            ? generatorFunc(state, bez.generator.params)
-            : generatorFunc(bez.generator.params);
+        bez.controlPoints = generatorFunc(state, bez.generator.params, bez);
     }
 
     if (!bez.controlPoints || bez.controlPoints.length < 4) return;
@@ -1736,7 +1597,6 @@ function updateBezier(id) {
         w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys)
     };
 
-    // ベジェが更新されたため、このベジェを使用するShapeのキャッシュをDirtyにする
     Object.values(state.shapes).forEach(shape => {
         if (shape.bezierIds && shape.bezierIds.includes(id)) {
             markShapeDirty(shape.id);
@@ -1745,31 +1605,6 @@ function updateBezier(id) {
 } /* updateBezier */
 
 function resolveBezierDependencies() {
-    // 1. すべての wrap Shape について、隣接するベジェの共有端点 (src1 と src2) を同期する (Option A)
-    Object.values(state.shapes).forEach(shape => {
-        if (shape && shape.name && shape.name.startsWith('wrap') && shape.bezierIds && shape.bezierIds.length > 0) {
-            const N = shape.bezierIds.length;
-            for (let i = 0; i < N; i++) {
-                const bid1 = shape.bezierIds[(i - 1 + N) % N];
-                const bid2 = shape.bezierIds[i];
-                if (bid1 === bid2) continue;
-                const bez1 = state.beziers[bid1];
-                const bez2 = state.beziers[bid2];
-                if (bez1 && bez2 && bez1.generator && bez2.generator && bez1.generator.params && bez2.generator.params) {
-                    const param1 = bez1.generator.params.src2;
-                    const param2 = bez2.generator.params.src1;
-                    if (param1 && param2) {
-                        // param2 (src1) を代表の正として param1 (src2) を同期する
-                        if (param1.bezierId !== param2.bezierId || param1.t !== param2.t) {
-                            param1.bezierId = param2.bezierId;
-                            param1.t = param2.t;
-                        }
-                    }
-                }
-            }
-        }
-    });
-
     const visited = new Set(), visiting = new Set(), sorted = [];
     const visit = (id) => {
         if (visited.has(id)) return;
@@ -1778,9 +1613,18 @@ function resolveBezierDependencies() {
         const b = state.beziers[id];
         if (!b) return;
         if (b.generator && b.generator.params) {
-            const { src1, src2 } = b.generator.params;
-            if (src1 && src1.bezierId) visit(src1.bezierId);
-            if (src2 && src2.bezierId) visit(src2.bezierId);
+            const { p1, p2 } = b.generator.params;
+            const addDep = (p) => {
+                if (p && p.shapeId) {
+                    const s = state.shapes[p.shapeId];
+                    const pt = s && s.points && s.points[p.pointIdx];
+                    if (pt && pt.bezierId) {
+                        visit(pt.bezierId);
+                    }
+                }
+            };
+            addDep(p1);
+            addDep(p2);
         }
         visiting.delete(id);
         visited.add(id); sorted.push(id);
@@ -1823,14 +1667,9 @@ function getCombinedBounds(shapeIds) {
 function moveShapes(shapeIds, dx, dy) {
     shapeIds.forEach(id => {
         const shape = state.shapes[id];
-        if (shape && shape.bezierIds) {
-            shape.bezierIds.forEach(bid => {
-                const bez = state.beziers[bid];
-                if (bez && bez.generator && bez.generator.type === 'arc') {
-                    bez.generator.params.x += dx;
-                    bez.generator.params.y += dy;
-                }
-            });
+        if (shape && shape.props) {
+            if (shape.props.x !== undefined) shape.props.x += dx;
+            if (shape.props.y !== undefined) shape.props.y += dy;
             markShapeDirty(id);
         }
     });
@@ -1840,16 +1679,18 @@ function moveShapes(shapeIds, dx, dy) {
 function scaleShapes(shapeIds, factor, cx, cy) {
     shapeIds.forEach(id => {
         const shape = state.shapes[id];
-        if (shape && shape.bezierIds) {
-            shape.bezierIds.forEach(bid => {
-                const bez = state.beziers[bid];
-                if (bez && bez.generator && bez.generator.type === 'arc') {
-                    const params = bez.generator.params;
-                    params.x = cx + (params.x - cx) * factor;
-                    params.y = cy + (params.y - cy) * factor;
-                    params.r *= factor;
+        if (shape) {
+            if (state.transformPivotMode === 'individual') {
+                if (shape.props && shape.props.r !== undefined) {
+                    shape.props.r *= factor;
                 }
-            });
+            } else {
+                if (shape.props) {
+                    if (shape.props.x !== undefined) shape.props.x = cx + (shape.props.x - cx) * factor;
+                    if (shape.props.y !== undefined) shape.props.y = cy + (shape.props.y - cy) * factor;
+                    if (shape.props.r !== undefined) shape.props.r *= factor;
+                }
+            }
             markShapeDirty(id);
         }
     });
@@ -1863,19 +1704,24 @@ function rotateShapes(shapeIds, angle, cx, cy) {
 
     shapeIds.forEach(id => {
         const shape = state.shapes[id];
-        if (shape && shape.bezierIds) {
-            shape.bezierIds.forEach(bid => {
-                const bez = state.beziers[bid];
-                if (bez && bez.generator && bez.generator.type === 'arc') {
-                    const params = bez.generator.params;
-                    const dx = params.x - cx;
-                    const dy = params.y - cy;
-                    params.x = cx + dx * cosVal - dy * sinVal;
-                    params.y = cy + dx * sinVal + dy * cosVal;
-                    params.startAngle += rad;
-                    params.endAngle += rad;
+        if (shape) {
+            if (state.transformPivotMode === 'individual') {
+                if (shape.props && shape.props.rotation !== undefined) {
+                    shape.props.rotation += angle;
                 }
-            });
+            } else {
+                if (shape.props) {
+                    if (shape.props.x !== undefined && shape.props.y !== undefined) {
+                        const dx = shape.props.x - cx;
+                        const dy = shape.props.y - cy;
+                        shape.props.x = cx + dx * cosVal - dy * sinVal;
+                        shape.props.y = cy + dx * sinVal + dy * cosVal;
+                    }
+                    if (shape.props.rotation !== undefined) {
+                        shape.props.rotation += angle;
+                    }
+                }
+            }
             markShapeDirty(id);
         }
     });
@@ -1890,9 +1736,10 @@ function addShapeAt(type, x, y) {
             const bId = generateId('b'), a = (i * Math.PI) / 2, na = ((i + 1) * Math.PI) / 2;
             state.beziers[bId] = {
                 id: bId,
+                parentId: id,
                 generator: {
                     type: 'arc',
-                    params: { x, y, r, startAngle: a, endAngle: na }
+                    params: { startAngle: a, endAngle: na }
                 },
                 controlPoints: [], samplePointByT: {}, boundingBox: {}
             };
@@ -1900,149 +1747,156 @@ function addShapeAt(type, x, y) {
         }
     }
     const count = Object.values(state.shapes).filter(s => s.name && s.name.startsWith(type)).length + 1;
+    
+    const points = [
+        { bezierId: bIds[0], t: 0 },
+        { bezierId: bIds[1], t: 0 },
+        { bezierId: bIds[2], t: 0 },
+        { bezierId: bIds[3], t: 0 },
+        { bezierId: bIds[3], t: 1 }
+    ];
+
     const shape = {
-        id, type: 'bezier-group', name: `${type} ${count}`, bezierIds: bIds, props: { x, y },
+        id, 
+        type: 'circle', 
+        name: `${type} ${count}`, 
+        bezierIds: bIds, 
+        props: { x, y, r, rotation: 0 },
         style: { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true },
-        strokeWidthData: [{ t: 0, w: 10 }, { t: 1, w: 10 }],
-        childIds: []
+        points: points,
+        strokeWidthData: [{ p: 0, w: 10 }, { p: 4, w: 10 }],
+        patternCorners: { TL: 0, TR: 1, BR: 2, BL: 3 }
     };
     state.shapes[id] = shape;
 
-    // アクティブレイヤーに追加
-    if (state.selectedLayerId && state.shapes[state.selectedLayerId]) {
-        state.shapes[state.selectedLayerId].childIds.push(id);
+    if (state.selectedLayerId && state.layers[state.selectedLayerId]) {
+        state.layers[state.selectedLayerId].childIds.push(id);
     } else {
         const firstLayerId = state.scene[0];
-        if (firstLayerId && state.shapes[firstLayerId]) {
-            state.shapes[firstLayerId].childIds.push(id);
+        if (firstLayerId && state.layers[firstLayerId]) {
+            state.layers[firstLayerId].childIds.push(id);
         }
     }
 
     resolveBezierDependencies();
     pushHistory();
     renderCanvas();
-} /* addShapeAt */
+    updatePropertiesPanel();
+    renderLayerList();
+}
 
 function createWrap() {
-    // 【保留事項】
-    // 将来的に 3 つ以上の複数図形の Wrap や、すでに Wrap された図形同士をさらに Wrap する階層化への対応を見据えています。
-    // 現状は 2 つの図形選択に固定したロジックとなっていますが、次のステップにて 3 点以上の Wrap 生成や、
-    // 生成後の頂点（ベジェ本数）の増減編集機能の設計・実装を行う予定のため、ここは一旦修正を保留とします。
-    const targets = Array.from(new Set([...state.anchoredShapeIds, ...state.selectedShapeIds]));
-    if (targets.length < 2) {
-        return;
-    }
+    const targets = Array.from(new Set([...state.selectedShapeIds]));
+    if (targets.length < 2) return;
     const [id1, id2] = targets;
     const shape1 = state.shapes[id1], shape2 = state.shapes[id2];
     if (!shape1 || !shape2) return;
 
-    // 接続元の図形から接続点のベジェIDを選定する
-    // 【接続点選定に関する設計方針】
-    // 円同士に限らず様々な図形（すでにwrapされた図形など）に対応するため、ここでは幾何学的な接線計算は行わず、
-    // 接続対象の図形の bezierIds[0] の t=0 (上側) と bezierIds[Math.min(2, bezierIds.length-1)] の t=0 (下側) を
-    // 固定的に結ぶシンプルなロジックとします。
-    // ※ 左右に並んだ円以外のケースでは、初期生成時の形状が「パッと見でwrapっぽくない交差した形」に見える場合がありますが、
-    //   後からユーザーがスライド操作等で手動微調整することを前提とする（Hello Neighbor的アプローチ）ため、これを許容します。
-    const src1_up_bezier = shape1.bezierIds[0];
-    const src1_down_bezier = shape1.bezierIds[Math.min(2, shape1.bezierIds.length - 1)];
-    const src2_up_bezier = shape2.bezierIds[0];
-    const src2_down_bezier = shape2.bezierIds[Math.min(2, shape2.bezierIds.length - 1)];
+    const pt1_up_idx = 0;
+    const pt1_down_idx = Math.min(2, (shape1.points?.length ?? 1) - 1);
+    const pt2_up_idx = 0;
+    const pt2_down_idx = Math.min(2, (shape2.points?.length ?? 1) - 1);
 
     const wrapId = generateId('s');
     const bIds = [];
 
-    // 4本の接続ベジェを生成（時計回りの環状ループになるように順次接続）
-    // 1. 上側接続線: shape1_up -> shape2_up
     const bId1 = generateId('b');
     state.beziers[bId1] = {
         id: bId1,
+        parentId: wrapId,
         generator: {
             type: 'connector',
             params: {
-                src1: { bezierId: src1_up_bezier, t: 0 },
-                src2: { bezierId: src2_up_bezier, t: 0 },
-                d1: 0.1, d2: 0.1
+                p1: { shapeId: id1, pointIdx: pt1_up_idx, d: 2.0 },
+                p2: { shapeId: id2, pointIdx: pt2_up_idx, d: 2.0 }
             }
         },
         controlPoints: [], samplePointByT: {}, boundingBox: {}
     };
     bIds.push(bId1);
 
-    // 2. 右側代替線: shape2_up -> shape2_down (shape2の側面に重なる線)
     const bId2 = generateId('b');
     state.beziers[bId2] = {
         id: bId2,
+        parentId: wrapId,
         generator: {
             type: 'connector',
             params: {
-                src1: { bezierId: src2_up_bezier, t: 0 },
-                src2: { bezierId: src2_down_bezier, t: 0 },
-                d1: 0.1, d2: 0.1
+                p1: { shapeId: id2, pointIdx: pt2_up_idx, d: 0.1 },
+                p2: { shapeId: id2, pointIdx: pt2_down_idx, d: 0.1 }
             }
         },
         controlPoints: [], samplePointByT: {}, boundingBox: {}
     };
     bIds.push(bId2);
 
-    // 3. 下側接続線: shape2_down -> shape1_down
     const bId3 = generateId('b');
     state.beziers[bId3] = {
         id: bId3,
+        parentId: wrapId,
         generator: {
             type: 'connector',
             params: {
-                src1: { bezierId: src2_down_bezier, t: 0 },
-                src2: { bezierId: src1_down_bezier, t: 0 },
-                d1: 0.1, d2: 0.1
+                p1: { shapeId: id2, pointIdx: pt2_down_idx, d: 2.0 },
+                p2: { shapeId: id1, pointIdx: pt1_down_idx, d: 2.0 }
             }
         },
         controlPoints: [], samplePointByT: {}, boundingBox: {}
     };
     bIds.push(bId3);
 
-    // 4. 左側代替線: shape1_down -> shape1_up (shape1の側面に重なる線)
     const bId4 = generateId('b');
     state.beziers[bId4] = {
         id: bId4,
+        parentId: wrapId,
         generator: {
             type: 'connector',
             params: {
-                src1: { bezierId: src1_down_bezier, t: 0 },
-                src2: { bezierId: src1_up_bezier, t: 0 },
-                d1: 0.1, d2: 0.1
+                p1: { shapeId: id1, pointIdx: pt1_down_idx, d: 0.1 },
+                p2: { shapeId: id1, pointIdx: pt1_up_idx, d: 0.1 }
             }
         },
         controlPoints: [], samplePointByT: {}, boundingBox: {}
     };
     bIds.push(bId4);
 
-    // 新しい wrap Shape オブジェクトを作成
     const wrapCount = Object.values(state.shapes).filter(s => s.name && s.name.startsWith('wrap')).length + 1;
+    
+    const points = [
+        { bezierId: bIds[0], t: 0 },
+        { bezierId: bIds[1], t: 0 },
+        { bezierId: bIds[2], t: 0 },
+        { bezierId: bIds[3], t: 0 },
+        { bezierId: bIds[3], t: 1 }
+    ];
+
     const wrapShape = {
         id: wrapId,
-        type: 'bezier-group',
+        type: 'wrap',
         name: `wrap ${wrapCount}`,
         bezierIds: bIds,
-        props: { x: 0, y: 0 },
-        style: { fill: '#2196F3', opacity: 0.5, outline: true, fillEnabled: true }, // 半透明の青で塗りつぶす
-        strokeWidthData: [{ t: 0, w: 10 }, { t: 1, w: 10 }],
-        childIds: []
+        props: {},
+        style: { fill: '#2196F3', opacity: 0.5, outline: true, fillEnabled: true },
+        points: points,
+        strokeWidthData: [{ p: 0, w: 10 }, { p: 4, w: 10 }],
+        patternCorners: { TL: 0, TR: 1, BR: 2, BL: 3 }
     };
     state.shapes[wrapId] = wrapShape;
 
-    // アクティブレイヤーに追加
-    if (state.selectedLayerId && state.shapes[state.selectedLayerId]) {
-        state.shapes[state.selectedLayerId].childIds.push(wrapId);
+    if (state.selectedLayerId && state.layers[state.selectedLayerId]) {
+        state.layers[state.selectedLayerId].childIds.push(wrapId);
     } else {
         const firstLayerId = state.scene[0];
-        if (firstLayerId && state.shapes[firstLayerId]) {
-            state.shapes[firstLayerId].childIds.push(wrapId);
+        if (firstLayerId && state.layers[firstLayerId]) {
+            state.layers[firstLayerId].childIds.push(wrapId);
         }
     }
 
     resolveBezierDependencies();
     pushHistory();
     renderCanvas();
+    updatePropertiesPanel();
+    renderLayerList();
 } /* createWrap */
 let currentRenderCoonsCount = 0;
 
@@ -2083,13 +1937,13 @@ function getShapeRenderBounds(shapeId) {
     if (shape.strokeWidthData && shape.strokeWidthData.length > 0) {
         maxW = Math.max(...shape.strokeWidthData.map(d => d.w));
     }
-    
+
     // 余白（最大の太さの半分 + 安全パディング 20px）
     const padding = (maxW / 2) + 20;
 
     const x = Math.floor(minX - padding);
     const y = Math.floor(minY - padding);
-    
+
     // 最小サイズは 1px にクリップ（ゼロサイズによる canvas エラー防止）
     const w = Math.max(1, Math.ceil(maxX + padding) - x);
     const h = Math.max(1, Math.ceil(maxY + padding) - y);
@@ -2119,7 +1973,6 @@ function renderCanvas() {
     svg.innerHTML = `<g id="viewport" transform="translate(${state.pan.x}, ${state.pan.y}) scale(${state.zoom}) rotate(${state.rotation})"></g>`;
     const viewport = document.getElementById('viewport');
 
-    // キャンバス全体の境界線を viewport の背景として自動描画
     const borderRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     borderRect.setAttribute('x', 0);
     borderRect.setAttribute('y', 0);
@@ -2131,10 +1984,9 @@ function renderCanvas() {
     borderRect.setAttribute('stroke-dasharray', '4,4');
     viewport.appendChild(borderRect);
 
-    // activeLayerId に属するShapeのガイド線をメインのSVGに描画
     const activeLayerId = state.selectedLayerId;
     if (activeLayerId) {
-        const activeLayer = state.shapes[activeLayerId];
+        const activeLayer = state.layers[activeLayerId];
         if (activeLayer && activeLayer.childIds) {
             activeLayer.childIds.forEach(childId => {
                 renderGuides(childId, viewport);
@@ -2142,14 +1994,100 @@ function renderCanvas() {
         }
     }
 
-    // アクティブレイヤーをリアルタイムに activeOffscreen に描画
     if (activeLayerId && state.canvas.activeOffscreen) {
         const activeCtx = state.canvas.activeOffscreen.getContext('2d');
         activeCtx.clearRect(0, 0, state.canvas.width, state.canvas.height);
-        drawShapeToCanvasContext(activeCtx, activeLayerId);
+        drawLayerToCanvasContext(activeCtx, activeLayerId);
     }
 
-    // under-canvas / active-canvas / over-canvas にそれぞれ対応するオフスクリーンから 1:1 で転写
+    // ドラッグ選択 marquee の描画
+    if (state.dragInfo && state.dragInfo.type === 'marquee') {
+        const pt1 = state.dragInfo.start;
+        const pt2 = state.dragInfo.current;
+        const marqueeRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        marqueeRect.setAttribute('x', Math.min(pt1.x, pt2.x));
+        marqueeRect.setAttribute('y', Math.min(pt1.y, pt2.y));
+        marqueeRect.setAttribute('width', Math.abs(pt1.x - pt2.x));
+        marqueeRect.setAttribute('height', Math.abs(pt1.y - pt2.y));
+        marqueeRect.setAttribute('fill', 'rgba(33, 150, 243, 0.1)');
+        marqueeRect.setAttribute('stroke', '#2196F3');
+        marqueeRect.setAttribute('stroke-width', '1');
+        marqueeRect.setAttribute('stroke-dasharray', '4,4');
+        viewport.appendChild(marqueeRect);
+    }
+
+    // 変形ピボットの描画
+    const pivots = getPivotPoints();
+    pivots.forEach(p => {
+        const lineH = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        lineH.setAttribute('x1', p.x - 8);
+        lineH.setAttribute('y1', p.y);
+        lineH.setAttribute('x2', p.x + 8);
+        lineH.setAttribute('y2', p.y);
+        lineH.setAttribute('stroke', '#ff5722');
+        lineH.setAttribute('stroke-width', '1.5');
+        
+        const lineV = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        lineV.setAttribute('x1', p.x);
+        lineV.setAttribute('y1', p.y - 8);
+        lineV.setAttribute('x2', p.x);
+        lineV.setAttribute('y2', p.y + 8);
+        lineV.setAttribute('stroke', '#ff5722');
+        lineV.setAttribute('stroke-width', '1.5');
+        
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', p.x);
+        circle.setAttribute('cy', p.y);
+        circle.setAttribute('r', 3);
+        circle.setAttribute('fill', 'none');
+        circle.setAttribute('stroke', '#ff5722');
+        circle.setAttribute('stroke-width', '1');
+
+        viewport.appendChild(lineH);
+        viewport.appendChild(lineV);
+        viewport.appendChild(circle);
+    });
+
+    // pick-point モードでの全接続点の表示
+    if (state.interaction.mode === 'pick-point') {
+        Object.entries(state.shapes).forEach(([sid, shape]) => {
+            if (shape.points) {
+                shape.points.forEach((p, idx) => {
+                    const bez = state.beziers[p.bezierId];
+                    if (bez) {
+                        const pt = MDMath.getPoint(bez, p.t);
+                        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                        c.setAttribute('cx', pt.x);
+                        c.setAttribute('cy', pt.y);
+                        c.setAttribute('r', 4);
+                        c.setAttribute('fill', 'rgba(200, 200, 200, 0.6)');
+                        c.setAttribute('stroke', '#999');
+                        c.setAttribute('stroke-width', '1');
+                        viewport.appendChild(c);
+                    }
+                });
+            }
+        });
+    }
+
+    // hoveredPoint のハイライト表示
+    if (state.hoveredPoint) {
+        const shape = state.shapes[state.hoveredPoint.shapeId];
+        const pt = shape?.points?.[state.hoveredPoint.pointIdx];
+        const bez = pt && state.beziers[pt.bezierId];
+        if (bez) {
+            const ptReal = MDMath.getPoint(bez, pt.t);
+            const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            c.setAttribute('cx', ptReal.x);
+            c.setAttribute('cy', ptReal.y);
+            c.setAttribute('r', 6);
+            c.setAttribute('fill', 'rgba(255, 82, 82, 0.8)');
+            c.setAttribute('stroke', '#ff5252');
+            c.setAttribute('stroke-width', '2');
+            viewport.appendChild(c);
+        }
+    }
+
     const underCanvas = document.getElementById('under-canvas');
     const activeCanvas = document.getElementById('active-canvas');
     const overCanvas = document.getElementById('over-canvas');
@@ -2167,7 +2105,7 @@ function renderCanvas() {
     }
 } /* renderCanvas */
 
-function drawOffscreenToOnscreen(onscreen, offscreen) {
+function drawOffscreenToOnscreen(onscreen, offscreen) { // MEMO: [ASK] そもそも onscreen と offscreen を分けているのって、チラつき防止のため？ onscreen を 1つの canvas にして offscreen 3枚からの WebGL での転写にすると速かったりする？
     if (!onscreen) return;
     const ctx = onscreen.getContext('2d');
     const rect = onscreen.getBoundingClientRect();
@@ -2193,369 +2131,128 @@ function drawOffscreenToOnscreen(onscreen, offscreen) {
     ctx.restore();
 }
 
+function drawLayerToCanvasContext(ctx, layerId) {
+    const layer = state.layers[layerId];
+    if (!layer || layer.visible === false) return;
+
+    ctx.save();
+    ctx.globalAlpha *= (layer.style?.opacity ?? 1);
+    layer.childIds?.forEach(childId => drawShapeToCanvasContext(ctx, childId));
+    ctx.restore();
+}
+
 function drawShapeToCanvasContext(ctx, shapeId) {
     const shape = state.shapes[shapeId];
     if (!shape) return;
 
-    if (shape.type === 'layer' && shape.visible === false) return;
-
     ctx.save();
 
-    if (shape.type === 'layer') {
-        ctx.globalAlpha *= (shape.style?.opacity ?? 1);
-        shape.childIds?.forEach(childId => drawShapeToCanvasContext(ctx, childId));
-    } else if (shape.bezierIds) {
-        const cache = getShapeCache(shapeId);
-        if (cache.isDirty) {
-            const bounds = getShapeRenderBounds(shapeId);
-            if (bounds) {
-                cache.x = bounds.x;
-                cache.y = bounds.y;
-                if (cache.canvas.width !== bounds.w || cache.canvas.height !== bounds.h) {
-                    cache.canvas.width = bounds.w;
-                    cache.canvas.height = bounds.h;
-                }
-                cache.w = bounds.w;
-                cache.h = bounds.h;
-            } else {
-                cache.x = 0;
-                cache.y = 0;
-                if (cache.canvas.width !== state.canvas.width || cache.canvas.height !== state.canvas.height) {
-                    cache.canvas.width = state.canvas.width;
-                    cache.canvas.height = state.canvas.height;
-                }
-                cache.w = state.canvas.width;
-                cache.h = state.canvas.height;
+    const cache = getShapeCache(shapeId);
+    if (cache.isDirty) {
+        const bounds = getShapeRenderBounds(shapeId);
+        if (bounds) {
+            cache.x = bounds.x;
+            cache.y = bounds.y;
+            if (cache.canvas.width !== bounds.w || cache.canvas.height !== bounds.h) {
+                cache.canvas.width = bounds.w;
+                cache.canvas.height = bounds.h;
             }
+            cache.w = bounds.w;
+            cache.h = bounds.h;
+        } else {
+            cache.x = 0;
+            cache.y = 0;
+            if (cache.canvas.width !== state.canvas.width || cache.canvas.height !== state.canvas.height) {
+                cache.canvas.width = state.canvas.width;
+                cache.canvas.height = state.canvas.height;
+            }
+            cache.w = state.canvas.width;
+            cache.h = state.canvas.height;
+        }
 
-            const cCtx = cache.ctx;
-            cCtx.clearRect(0, 0, cache.w, cache.h);
+        const cCtx = cache.ctx;
+        cCtx.clearRect(0, 0, cache.w, cache.h);
+        cCtx.save();
+        cCtx.translate(-cache.x, -cache.y);
+
+        const fillEnabled = shape.style?.fillEnabled !== false;
+        const outlineEnabled = shape.style?.outline !== false;
+
+        cCtx.globalAlpha = shape.style?.opacity ?? 1;
+
+        if (fillEnabled) {
             cCtx.save();
-            cCtx.translate(-cache.x, -cache.y);
+            cCtx.beginPath();
+            let first = true;
+            shape.bezierIds.forEach((bid, i) => {
+                const b = state.beziers[bid];
+                if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
+                const v = b.controlPoints.map(cp => cp.v);
+                if (first) {
+                    cCtx.moveTo(v[0].x, v[0].y);
+                    first = false;
+                } else {
+                    cCtx.lineTo(v[0].x, v[0].y);
+                }
+                cCtx.bezierCurveTo(v[1].x, v[1].y, v[2].x, v[2].y, v[3].x, v[3].y);
+            });
+            cCtx.closePath();
 
-            const fillEnabled = shape.style?.fillEnabled !== false;
-            const outlineEnabled = shape.style?.outline !== false;
-
-            cCtx.globalAlpha = shape.style?.opacity ?? 1;
-
-            if (fillEnabled) {
-                cCtx.save();
-                cCtx.beginPath();
-                let first = true;
-                shape.bezierIds.forEach((bid, i) => {
-                    const b = state.beziers[bid];
-                    if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
-                    const v = b.controlPoints.map(cp => cp.v);
-                    if (first) {
-                        cCtx.moveTo(v[0].x, v[0].y);
-                        first = false;
-                    } else {
-                        cCtx.lineTo(v[0].x, v[0].y);
-                    }
-                    cCtx.bezierCurveTo(v[1].x, v[1].y, v[2].x, v[2].y, v[3].x, v[3].y);
-                });
-                cCtx.closePath();
-
-                let drawn = false;
-                if (shape.style?.fillPattern) {
-                    currentRenderCoonsCount++;
-                    const meshPositions = generateCoonsPatchMesh(shape);
-                    if (meshPositions) {
-                        const webglCanvas = renderPatternWebGL(meshPositions, shape.style.fillPattern);
-                        if (webglCanvas) {
-                            cCtx.drawImage(webglCanvas, 0, 0);
-                            drawn = true;
-                        }
+            let drawn = false;
+            if (shape.style?.fillPattern) {
+                currentRenderCoonsCount++;
+                const meshPositions = generateCoonsPatchMesh(shape, state.beziers);
+                if (meshPositions) {
+                    const webglCanvas = WebGLRenderer.renderPattern(meshPositions, shape.style.fillPattern, state.canvas.width, state.canvas.height);
+                    if (webglCanvas) {
+                        cCtx.drawImage(webglCanvas, 0, 0);
+                        drawn = true;
                     }
                 }
-                if (!drawn) {
+            }
+            if (!drawn) {
+                cCtx.fillStyle = shape.style?.fill || '#000000';
+                cCtx.fill();
+            }
+            cCtx.restore();
+        }
+
+        if (outlineEnabled) {
+            let outlineDrawn = false;
+            if (shape.style?.strokePattern) {
+                currentRenderCoonsCount++;
+                const meshPositions = generateStrokeCoonsPatchMesh(shape, state.beziers);
+                if (meshPositions) {
+                    const webglCanvas = WebGLRenderer.renderPattern(meshPositions, shape.style.strokePattern, state.canvas.width, state.canvas.height);
+                    if (webglCanvas) {
+                        cCtx.drawImage(webglCanvas, 0, 0);
+                        outlineDrawn = true;
+                    }
+                }
+            }
+            if (!outlineDrawn) {
+                const { leftPoints, rightPoints } = MDMath.generateOutlinePathPoints(shape, state.beziers);
+                if (leftPoints.length > 0) {
+                    cCtx.beginPath();
+                    cCtx.moveTo(leftPoints[0].x, leftPoints[0].y);
+                    for (let i = 1; i < leftPoints.length; i++) {
+                        cCtx.lineTo(leftPoints[i].x, leftPoints[i].y);
+                    }
+                    for (let i = rightPoints.length - 1; i >= 0; i--) {
+                        cCtx.lineTo(rightPoints[i].x, rightPoints[i].y);
+                    }
+                    cCtx.closePath();
                     cCtx.fillStyle = shape.style?.fill || '#000000';
                     cCtx.fill();
                 }
-                cCtx.restore();
             }
-
-            if (outlineEnabled) {
-                let outlineDrawn = false;
-                if (shape.style?.strokePattern) {
-                    currentRenderCoonsCount++;
-                    const meshPositions = generateStrokeCoonsPatchMesh(shape);
-                    if (meshPositions) {
-                        const webglCanvas = renderPatternWebGL(meshPositions, shape.style.strokePattern);
-                        if (webglCanvas) {
-                            cCtx.drawImage(webglCanvas, 0, 0);
-                            outlineDrawn = true;
-                        }
-                    }
-                }
-                if (!outlineDrawn) {
-                    const { leftPoints, rightPoints } = MDMath.generateOutlinePathPoints(shape, state.beziers);
-                    if (leftPoints.length > 0) {
-                        cCtx.beginPath();
-                        cCtx.moveTo(leftPoints[0].x, leftPoints[0].y);
-                        for (let i = 1; i < leftPoints.length; i++) {
-                            cCtx.lineTo(leftPoints[i].x, leftPoints[i].y);
-                        }
-                        for (let i = rightPoints.length - 1; i >= 0; i--) {
-                            cCtx.lineTo(rightPoints[i].x, rightPoints[i].y);
-                        }
-                        cCtx.closePath();
-                        cCtx.fillStyle = shape.style?.fill || '#000000';
-                        cCtx.fill();
-                    }
-                }
-            }
-
-            cCtx.restore();
-            cache.isDirty = false;
         }
-
-        ctx.drawImage(cache.canvas, cache.x, cache.y);
+        cCtx.restore();
+        cache.isDirty = false;
     }
 
+    ctx.drawImage(cache.canvas, cache.x, cache.y);
     ctx.restore();
-}
-
-// --- Pattern Edit Mode Handlers & Helpers ---
-
-function getParamDistance(tA, tB) {
-    const diff = Math.abs(tA - tB);
-    return Math.min(diff, 1.0 - diff);
-}
-
-// パターン編集モードのトグル (Shift+p)
-function handleTogglePatternEdit(ctx) {
-    if (state.selectedShapeIds.length > 0) {
-        const shapeId = state.selectedShapeIds[0];
-        const shape = state.shapes[shapeId];
-        if (!shape || !shape.bezierIds || !shape.style || !shape.style.fillPattern) {
-            return { pushHistory: false, needsRender: false };
-        }
-
-        state.patternEdit.active = !state.patternEdit.active;
-        if (state.patternEdit.active) {
-            state.patternEdit.targetT = 0.0;
-            // Ensure thicknessEdit is deactivated
-            if (state.thicknessEdit.active) {
-                state.thicknessEdit.active = false;
-                const thicknessGuide = document.getElementById('thickness-guide');
-                if (thicknessGuide) thicknessGuide.classList.add('hidden');
-            }
-
-            // Auto-initialize corners if not present
-            if (!shape.patternCorners) {
-                initPatternCorners(shape);
-            }
-
-            // Find closest corner to targetT (0.0) initially
-            let closestCorner = 'TL';
-            let minDist = Infinity;
-            ['TL', 'TR', 'BR', 'BL'].forEach(key => {
-                const tCorner = shape.patternCorners[key];
-                if (tCorner !== undefined) {
-                    const dist = getParamDistance(0.0, tCorner);
-                    if (dist < minDist) {
-                        minDist = dist;
-                        closestCorner = key;
-                    }
-                }
-            });
-            state.patternEdit.selectedCorner = closestCorner;
-
-            const guide = document.getElementById('pattern-guide');
-            if (guide) guide.classList.remove('hidden');
-        } else {
-            const guide = document.getElementById('pattern-guide');
-            if (guide) guide.classList.add('hidden');
-        }
-        return { pushHistory: false, needsRender: true };
-    }
-    return { pushHistory: false, needsRender: false };
-}
-
-// targetT のスライド処理
-function handleTSlidePattern(ctx) {
-    let nextT = state.patternEdit.targetT + ctx.dx * 0.005;
-    nextT = ((nextT % 1) + 1) % 1;
-    state.patternEdit.targetT = nextT;
-
-    // Automatically find the closest corner to highlight/select
-    if (state.selectedShapeIds.length > 0) {
-        const shapeId = state.selectedShapeIds[0];
-        const shape = state.shapes[shapeId];
-        if (shape && shape.patternCorners) {
-            let closestCorner = 'TL';
-            let minDist = Infinity;
-            ['TL', 'TR', 'BR', 'BL'].forEach(key => {
-                const tCorner = shape.patternCorners[key];
-                if (tCorner !== undefined) {
-                    const dist = getParamDistance(nextT, tCorner);
-                    if (dist < minDist) {
-                        minDist = dist;
-                        closestCorner = key;
-                    }
-                }
-            });
-            state.patternEdit.selectedCorner = closestCorner;
-        }
-    }
-}
-
-// 選択中の角の parameter 移動開始
-function handleTMovePatternStart() {
-    if (state.selectedShapeIds.length === 0) return;
-    const shapeId = state.selectedShapeIds[0];
-    const shape = state.shapes[shapeId];
-    if (!shape || !shape.patternCorners) return;
-
-    const targetT = state.patternEdit.targetT;
-    let closestCorner = 'TL';
-    let minDist = Infinity;
-    ['TL', 'TR', 'BR', 'BL'].forEach(key => {
-        const tCorner = shape.patternCorners[key];
-        if (tCorner !== undefined) {
-            const dist = getParamDistance(targetT, tCorner);
-            if (dist < minDist) {
-                minDist = dist;
-                closestCorner = key;
-            }
-        }
-    });
-    state.patternEdit.selectedCorner = closestCorner;
-}
-
-// 選択中の角の parameter 移動処理
-function handleTMovePattern(ctx) {
-    if (state.selectedShapeIds.length === 0) return;
-    const shapeId = state.selectedShapeIds[0];
-    const shape = state.shapes[shapeId];
-    if (!shape || !shape.patternCorners) return;
-
-    const key = state.patternEdit.selectedCorner;
-    if (!key) return;
-
-    let t = shape.patternCorners[key] + ctx.dx * 0.005;
-    t = ((t % 1) + 1) % 1;
-    shape.patternCorners[key] = t;
-    state.patternEdit.targetT = t;
-    markShapeDirty(shapeId);
-    resolveBezierDependencies();
-}
-
-// コマンド処理
-function openCommandMode() {
-    state.command.active = true;
-    const bar = document.getElementById('command-bar');
-    if (!bar) return;
-    bar.classList.remove('hidden');
-    const input = document.getElementById('command-input');
-    input.value = '';
-    input.focus();
-}
-
-function closeCommandMode(confirm = true) {
-    state.command.active = false;
-    const bar = document.getElementById('command-bar');
-    if (bar) bar.classList.add('hidden');
-
-    const input = document.getElementById('command-input');
-    if (input) {
-        if (confirm) {
-            executeCommand(input.value);
-        }
-        input.blur();
-    }
-}
-
-function handleOpenCommand(ctx) {
-    if (document.activeElement && document.activeElement.tagName === 'INPUT') return { needsRender: false };
-    if (ctx.rawEvent) ctx.rawEvent.preventDefault();
-    openCommandMode();
-    return { needsRender: false };
-}
-
-function executeCommand(cmdStr) {
-    const parts = cmdStr.trim().split(/\s+/);
-    if (parts.length === 0) return;
-    const command = parts[0];
-    if (command === 'fillpattern') {
-        const patternName = parts[1];
-        if (!patternName || patternName === 'none' || patternName === 'clear') {
-            if (state.selectedShapeIds.length > 0) {
-                state.selectedShapeIds.forEach(shapeId => {
-                    const shape = state.shapes[shapeId];
-                    if (shape) {
-                        if (shape.style) {
-                            delete shape.style.fillPattern;
-                            markShapeDirty(shapeId);
-                        }
-                    }
-                });
-                rasterizeInactiveLayers();
-                renderCanvas();
-                pushHistory();
-            }
-        } else {
-            loadDrawingTexture(patternName).then(texture => {
-                if (!texture) {
-                    console.warn(`Could not load pattern texture for ID "${patternName}"`);
-                    return;
-                }
-                if (state.selectedShapeIds.length > 0) {
-                    state.selectedShapeIds.forEach(shapeId => {
-                        const shape = state.shapes[shapeId];
-                        if (shape && shape.bezierIds) {
-                            if (!shape.style) shape.style = {};
-                            shape.style.fillPattern = patternName;
-                            initPatternCorners(shape);
-                            markShapeDirty(shapeId);
-                        }
-                    });
-                    rasterizeInactiveLayers();
-                    renderCanvas();
-                    pushHistory();
-                }
-            });
-        }
-    } else if (command === 'strokepattern') {
-        const patternName = parts[1];
-        if (!patternName || patternName === 'none' || patternName === 'clear') {
-            if (state.selectedShapeIds.length > 0) {
-                state.selectedShapeIds.forEach(shapeId => {
-                    const shape = state.shapes[shapeId];
-                    if (shape) {
-                        if (shape.style) {
-                            delete shape.style.strokePattern;
-                            markShapeDirty(shapeId);
-                        }
-                    }
-                });
-                rasterizeInactiveLayers();
-                renderCanvas();
-                pushHistory();
-            }
-        } else {
-            loadDrawingTexture(patternName).then(texture => {
-                if (!texture) {
-                    console.warn(`Could not load stroke pattern texture for ID "${patternName}"`);
-                    return;
-                }
-                if (state.selectedShapeIds.length > 0) {
-                    state.selectedShapeIds.forEach(shapeId => {
-                        const shape = state.shapes[shapeId];
-                        if (shape && shape.bezierIds) {
-                            if (!shape.style) shape.style = {};
-                            shape.style.strokePattern = patternName;
-                            markShapeDirty(shapeId);
-                        }
-                    });
-                    rasterizeInactiveLayers();
-                    renderCanvas();
-                    pushHistory();
-                }
-            });
-        }
-    }
 }
 
 function rasterizeInactiveLayers() {
@@ -2572,15 +2269,15 @@ function rasterizeInactiveLayers() {
     let foundActive = false;
 
     state.scene.forEach(layerId => {
-        const layer = state.shapes[layerId];
+        const layer = state.layers[layerId];
         if (!layer) return;
 
         if (layerId === state.selectedLayerId) {
             foundActive = true;
-            drawShapeToCanvasContext(activeCtx, layerId);
+            drawLayerToCanvasContext(activeCtx, layerId);
         } else {
             const targetCtx = foundActive ? overCtx : underCtx;
-            drawShapeToCanvasContext(targetCtx, layerId);
+            drawLayerToCanvasContext(targetCtx, layerId);
         }
     });
 }
@@ -2597,12 +2294,11 @@ function renderMinimap() {
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // アクティブレイヤーを一時的に activeOffscreen にラスタライズ
     const activeLayerId = state.selectedLayerId;
     if (activeLayerId && state.canvas.activeOffscreen) {
         const activeCtx = state.canvas.activeOffscreen.getContext('2d');
         activeCtx.clearRect(0, 0, state.canvas.width, state.canvas.height);
-        drawShapeToCanvasContext(activeCtx, activeLayerId);
+        drawLayerToCanvasContext(activeCtx, activeLayerId);
     }
 
     // キャンバス全体がミニマップにフィットする基本スケールを算出
@@ -2797,7 +2493,6 @@ function switchView(viewId) {
 async function saveDrawing() {
     if (!state.currentDrawId || !db) return;
 
-    // 1. アスペクト比を保持して 512x512 以内のサイズになるようテンポラリ Canvas のサイズを算出
     const baseW = state.canvas.width || 800;
     const baseH = state.canvas.height || 600;
     const scale = Math.min(512 / baseW, 512 / baseH);
@@ -2810,22 +2505,19 @@ async function saveDrawing() {
     const tempCtx = tempCanvas.getContext('2d');
     tempCtx.clearRect(0, 0, thumbW, thumbH);
 
-    // アクティブレイヤーを最新状態で activeOffscreen に描画
     const activeLayerId = state.selectedLayerId;
     if (activeLayerId && state.canvas.activeOffscreen) {
         const activeCtx = state.canvas.activeOffscreen.getContext('2d');
         activeCtx.clearRect(0, 0, state.canvas.width, state.canvas.height);
-        drawShapeToCanvasContext(activeCtx, activeLayerId);
+        drawLayerToCanvasContext(activeCtx, activeLayerId);
     }
 
-    // under, active, over の各オフスクリーンを重ねて縮小描画
     [state.canvas.underOffscreen, state.canvas.activeOffscreen, state.canvas.overOffscreen].forEach(offscreen => {
         if (offscreen) {
             tempCtx.drawImage(offscreen, 0, 0, offscreen.width, offscreen.height, 0, 0, thumbW, thumbH);
         }
     });
 
-    // Canvas から PNG Blob を生成
     const previewBlob = await new Promise((resolve) => {
         tempCanvas.toBlob((blob) => resolve(blob), 'image/png');
     });
@@ -2835,6 +2527,7 @@ async function saveDrawing() {
     const cleaned = JSON.parse(JSON.stringify({
         shapes: state.shapes,
         beziers: state.beziers,
+        layers: state.layers,
         scene: state.scene
     }, stateReplacer));
 
@@ -2844,9 +2537,10 @@ async function saveDrawing() {
         type: state.drawingType || 'canvas',
         shapes: cleaned.shapes,
         beziers: cleaned.beziers,
+        layers: cleaned.layers,
         scene: cleaned.scene,
-        canvas: { width: state.canvas.width, height: state.canvas.height }, // キャンバスサイズを保存
-        preview: previewBlob, // Blob オブジェクトを直接保存
+        canvas: { width: state.canvas.width, height: state.canvas.height },
+        preview: previewBlob,
         updatedAt: Date.now()
     });
 } /* saveDrawing */
@@ -2959,7 +2653,32 @@ function openDrawing(id) {
         }
         state.shapes = data.shapes || {};
         state.beziers = data.beziers || {};
+        state.layers = data.layers || {};
         state.scene = data.scene || [];
+
+        // レイヤーが無い場合、初期レイヤーを作成（後方互換）
+        if (Object.keys(state.layers).length === 0) {
+            const defaultLayerId = generateId('l');
+            state.layers[defaultLayerId] = {
+                id: defaultLayerId,
+                name: 'Layer 1',
+                childIds: Object.keys(state.shapes).filter(sid => !sid.startsWith('l')),
+                visible: true,
+                style: { opacity: 1 }
+            };
+            state.scene = [defaultLayerId];
+        }
+
+        // ベジェの親 ID 紐付けを逆算して格納
+        Object.entries(state.shapes).forEach(([sid, shape]) => {
+            if (shape.bezierIds) {
+                shape.bezierIds.forEach(bid => {
+                    if (state.beziers[bid]) {
+                        state.beziers[bid].parentId = sid;
+                    }
+                });
+            }
+        });
 
         // 履歴の初期化
         state.history = [];
@@ -3000,10 +2719,8 @@ function openDrawing(id) {
 
         const loadPromises = Array.from(textureIdsToLoad).map(id => loadDrawingTexture(id));
         Promise.all(loadPromises).then(() => {
-            // 依存関係とキャッシュデータの再計算
             resolveBezierDependencies();
             clearAllCaches();
-
             rasterizeInactiveLayers();
             renderCanvas();
             pushHistory();
@@ -3118,9 +2835,9 @@ function startNewDrawing(type = 'canvas') {
     }
     state.shapes = {};
     state.beziers = {};
+    state.layers = {};
     state.scene = [];
     state.selectedShapeIds = [];
-    state.anchoredShapeIds = [];
     state.zoom = 1;
     state.rotation = 0;
     state.pan = { x: 0, y: 0 };
@@ -3128,7 +2845,6 @@ function startNewDrawing(type = 'canvas') {
     state.historyIndex = -1;
     state.nextIdCounter = 1;
 
-    // キャンバスサイズの初期化と UI 同期
     state.canvas.width = 800;
     state.canvas.height = 600;
     const widthInput = document.getElementById('input-canvas-width');
@@ -3139,16 +2855,13 @@ function startNewDrawing(type = 'canvas') {
     }
     resizeOffscreenCanvases();
 
-    // デフォルトレイヤーの作成
     const layerId = generateId('l');
-    state.shapes[layerId] = {
+    state.layers[layerId] = {
         id: layerId,
-        type: 'layer',
         name: 'Layer 1',
         childIds: [],
         style: { opacity: 1 },
-        visible: true,
-        locked: false
+        visible: true
     };
     state.scene = [layerId];
     state.selectedLayerId = layerId;
@@ -3162,15 +2875,13 @@ function startNewDrawing(type = 'canvas') {
 
 function addLayer() {
     const id = generateId('l');
-    const count = state.scene.filter(sid => state.shapes[sid]?.type === 'layer').length + 1;
-    state.shapes[id] = {
+    const count = state.scene.length + 1;
+    state.layers[id] = {
         id,
-        type: 'layer',
         name: `Layer ${count}`,
         childIds: [],
         style: { opacity: 1 },
-        visible: true,
-        locked: false
+        visible: true
     };
     state.scene.push(id);
     state.selectedLayerId = id;
@@ -3180,11 +2891,10 @@ function addLayer() {
 } /* addLayer */
 
 function deleteLayer(layerId) {
-    const layer = state.shapes[layerId];
-    if (!layer || layer.type !== 'layer') return;
+    const layer = state.layers[layerId];
+    if (!layer) return;
 
-    const layerCount = state.scene.filter(sid => state.shapes[sid]?.type === 'layer').length;
-    if (layerCount <= 1) {
+    if (state.scene.length <= 1) {
         return;
     }
 
@@ -3200,7 +2910,7 @@ function deleteLayer(layerId) {
     });
 
     // レイヤー自身を削除
-    delete state.shapes[layerId];
+    delete state.layers[layerId];
     state.scene = state.scene.filter(id => id !== layerId);
 
     // 選択レイヤーの更新
@@ -3218,43 +2928,61 @@ function renderLayerList() {
     if (!list) return;
     list.innerHTML = '';
 
+    const query = state.search.query || '';
+
     [...state.scene].reverse().forEach(layerId => {
-        const layer = state.shapes[layerId];
-        if (!layer || layer.type !== 'layer') return;
+        const layer = state.layers[layerId];
+        if (!layer) return;
+
+        const childShapes = layer.childIds.map(id => state.shapes[id]).filter(Boolean);
+        const matchedShapes = childShapes.filter(shape => {
+            if (!query) return true;
+            return shape.id.toLowerCase().includes(query) || (shape.name && shape.name.toLowerCase().includes(query));
+        });
+
+        const layerMatches = query && layer.name.toLowerCase().includes(query);
+        if (query && matchedShapes.length === 0 && !layerMatches) {
+            return;
+        }
 
         const item = document.createElement('div');
         item.className = `layer-item${state.selectedLayerId === layerId ? ' active' : ''}${layer.visible ? '' : ' hidden-layer'}`;
+        item.style.flexDirection = 'column';
+        item.style.alignItems = 'stretch';
+        item.style.padding = '4px 8px';
 
         item.innerHTML = `
-            <div class="layer-info">
-                <span class="layer-visibility-btn"><i class="bi ${layer.visible ? 'bi-eye' : 'bi-eye-slash'}"></i></span>
-                <input class="layer-name-input" type="text" value="${layer.name}">
+            <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                <div class="layer-info" style="display:flex; align-items:center; gap:6px;">
+                    <span class="layer-visibility-btn" style="cursor:pointer;"><i class="bi ${layer.visible ? 'bi-eye' : 'bi-eye-slash'}"></i></span>
+                    <input class="layer-name-input" type="text" value="${layer.name}" style="font-weight:600; border:none; background:transparent; width:100px;">
+                </div>
+                <div class="layer-controls">
+                    <button class="layer-control-btn btn-layer-delete"><i class="bi bi-trash"></i></button>
+                </div>
             </div>
-            <div class="layer-controls">
-                <button class="layer-control-btn btn-layer-delete"><i class="bi bi-trash"></i></button>
-            </div>
-        `; /* item.innerHTML */
+            <div class="layer-shapes-list" style="margin-left: 16px; margin-top: 4px; display:flex; flex-direction:column; gap:2px;"></div>
+        `;
 
-        // 選択イベント
-        item.onclick = (e) => {
-            if (e.target.closest('input') || e.target.closest('button') || e.target.closest('.layer-visibility-btn')) return;
+        item.addEventListener('click', (e) => {
+            if (e.target.closest('input') || e.target.closest('button') || e.target.closest('.layer-visibility-btn') || e.target.closest('.shape-item-row')) return;
             state.selectedLayerId = layerId;
-            state.selectedShapeIds = []; // レイヤー切替時に図形選択をクリア
-            state.focusedVertex = null;  // 頂点フォーカスもクリア
+            state.selectedShapeIds = [];
             rasterizeInactiveLayers();
             renderCanvas();
-        };
+            updatePropertiesPanel();
+            renderLayerList();
+        });
 
-        // 表示・非表示トグル
         item.querySelector('.layer-visibility-btn').onclick = (e) => {
             e.stopPropagation();
             layer.visible = !layer.visible;
             rasterizeInactiveLayers();
             renderCanvas();
             pushHistory();
+            renderLayerList();
         };
 
-        // 名前編集
         const input = item.querySelector('.layer-name-input');
         input.onblur = () => {
             if (input.value.trim() !== '') {
@@ -3268,120 +2996,514 @@ function renderLayerList() {
             if (e.key === 'Enter') input.blur();
         };
 
-        // 削除
         item.querySelector('.btn-layer-delete').onclick = (e) => {
             e.stopPropagation();
             deleteLayer(layerId);
+            renderLayerList();
         };
+
+        const shapesListDiv = item.querySelector('.layer-shapes-list');
+        matchedShapes.forEach(shape => {
+            const shapeRow = document.createElement('div');
+            shapeRow.className = 'shape-item-row';
+            const isSelected = state.selectedShapeIds.includes(shape.id);
+            shapeRow.style.cssText = `
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 4px 6px;
+                background: ${isSelected ? '#e3f2fd' : 'transparent'};
+                border-radius: 4px;
+                font-size: 11px;
+                color: #555;
+                cursor: pointer;
+                border: 1px solid ${isSelected ? '#2196F3' : 'transparent'};
+            `;
+
+            shapeRow.innerHTML = `
+                <span style="font-weight: 500;">${shape.name || shape.type}</span>
+                <span style="font-size: 9px; color: #999; font-family: monospace;">${shape.id}</span>
+            `;
+
+            shapeRow.onclick = (e) => {
+                e.stopPropagation();
+                if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                    if (isSelected) {
+                        state.selectedShapeIds = state.selectedShapeIds.filter(id => id !== shape.id);
+                    } else {
+                        state.selectedShapeIds.push(shape.id);
+                    }
+                } else {
+                    state.selectedShapeIds = [shape.id];
+                }
+                state.selectedLayerId = layerId;
+                renderCanvas();
+                updatePropertiesPanel();
+                renderLayerList();
+            };
+
+            shapesListDiv.appendChild(shapeRow);
+        });
 
         list.appendChild(item);
     });
 } /* renderLayerList */
 
-function openSearchMode() {
-    state.search.active = true;
-    const bar = document.getElementById('search-bar');
-    if (!bar) return;
-    bar.classList.remove('hidden');
-    const input = document.getElementById('search-input');
-    input.value = '';
-    input.focus();
-    state.search.results = [];
-    state.search.currentIndex = -1;
-}
+function updatePropertiesPanel() {
+    const container = document.getElementById('properties-container');
+    if (!container) return;
 
-function closeSearchMode(confirm = true) {
-    state.search.active = false;
-    const bar = document.getElementById('search-bar');
-    if (bar) bar.classList.add('hidden');
-
-    const input = document.getElementById('search-input');
-    if (input) input.blur();
-}
-
-function performSearch(query) {
-    const q = query.toLowerCase().trim();
-    if (!q) {
-        state.search.results = [];
-        state.search.currentIndex = -1;
+    if (state.selectedShapeIds.length === 0) {
+        container.innerHTML = `<p style="color: #999; font-style: italic; text-align: center; margin-top: 20px;">要素を選択してください</p>`;
         return;
     }
 
-    const results = [];
+    const activeId = state.selectedShapeIds[state.selectedShapeIds.length - 1];
+    const shape = state.shapes[activeId];
+    if (!shape) {
+        container.innerHTML = `<p style="color: #999; font-style: italic; text-align: center; margin-top: 20px;">要素を選択してください</p>`;
+        return;
+    }
 
-    // レイヤーをスキャン
-    state.scene.forEach(layerId => {
-        const layer = state.shapes[layerId];
-        if (!layer || layer.type !== 'layer') return;
+    let html = '';
 
-        // レイヤー自体のマッチ (name)
-        if (layer.name.toLowerCase().includes(q)) {
-            results.push({
-                type: 'layer',
-                id: layerId,
-                name: layer.name,
-                dispName: `レイヤー: ${layer.name}`
-            });
-        }
+    html += `
+        <div class="prop-group">
+            <span class="prop-label">ID: ${shape.id} (Type: ${shape.type})</span>
+            <input type="text" id="prop-name" class="prop-input" value="${shape.name || ''}" placeholder="名前">
+        </div>
+    `;
 
-        // レイヤー内の子Shapeをスキャン
-        layer.childIds.forEach(shapeId => {
-            const shape = state.shapes[shapeId];
-            if (!shape) return;
-
-            let matches = false;
-            let shapeName = shape.name || shape.type;
-
-            // IDやtype、nameでのマッチ
-            if (shape.id.toLowerCase().includes(q) ||
-                shape.type.toLowerCase().includes(q) ||
-                (shape.name && shape.name.toLowerCase().includes(q))) {
-                matches = true;
-            }
-
-            // ベジェ曲線のジェネレータタイプでのマッチ
-            if (shape.bezierIds) {
-                const generators = shape.bezierIds.map(bid => state.beziers[bid]?.generator?.type).filter(Boolean);
-                if (generators.some(g => g.toLowerCase().includes(q))) {
-                    matches = true;
-                }
-            }
-
-            if (matches) {
-                results.push({
-                    type: 'shape',
-                    id: shapeId,
-                    layerId: layerId,
-                    name: shapeName,
-                    dispName: `図形 (${shapeName}): ${shapeId.substring(0, 8)}`
-                });
-            }
+    if (shape.props) {
+        html += `<div style="border-top:1px solid #eee; margin-top:8px; padding-top:8px;"><strong>幾何プロパティ</strong></div>`;
+        Object.entries(shape.props).forEach(([key, val]) => {
+            html += `
+                <div class="prop-group" style="margin-top:6px;">
+                    <span class="prop-label">${key}</span>
+                    <div class="prop-row">
+                        <input type="number" id="prop-val-${key}" class="prop-input" value="${Math.round(val * 100) / 100}">
+                        <button class="prop-drag-btn" data-prop="${key}" title="ドラッグで調整"><i class="bi bi-arrows-move"></i></button>
+                    </div>
+                </div>
+            `;
         });
+    }
+
+    if (shape.style) {
+        html += `<div style="border-top:1px solid #eee; margin-top:8px; padding-top:8px;"><strong>スタイル</strong></div>`;
+        html += `
+            <div class="prop-row" style="margin-top:6px; justify-content:space-between;">
+                <label style="display:flex; align-items:center; gap:4px; font-size:11px;">
+                    <input type="checkbox" id="prop-fill-enabled" ${shape.style.fillEnabled ? 'checked' : ''}> 塗りつぶし
+                </label>
+                <label style="display:flex; align-items:center; gap:4px; font-size:11px;">
+                    <input type="checkbox" id="prop-outline-enabled" ${shape.style.outline ? 'checked' : ''}> 輪郭線
+                </label>
+            </div>
+            <div class="prop-group" style="margin-top:6px;">
+                <span class="prop-label">色</span>
+                <div class="prop-row">
+                    <input type="color" id="prop-fill-color" class="prop-input" value="${shape.style.fill || '#2196F3'}" style="padding:0; height:24px; border:none; cursor:pointer;">
+                </div>
+            </div>
+            <div class="prop-group" style="margin-top:6px;">
+                <span class="prop-label">不透明度 (${Math.round((shape.style.opacity ?? 1) * 100)}%)</span>
+                <input type="range" id="prop-opacity" class="prop-input" min="0" max="1" step="0.05" value="${shape.style.opacity ?? 1}">
+            </div>
+            <div class="prop-group" style="margin-top:6px;">
+                <span class="prop-label">パターンテクスチャ</span>
+                <div class="prop-row">
+                    <input type="text" id="prop-fill-pattern" class="prop-input" value="${shape.style.fillPattern || ''}" readonly placeholder="パターンなし">
+                    <button class="prop-action-btn" id="btn-select-pattern" title="パターン選択"><i class="bi bi-images"></i></button>
+                    ${shape.style.fillPattern ? `<button class="prop-action-btn" id="btn-clear-pattern" title="解除"><i class="bi bi-x-lg"></i></button>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    if (shape.points) {
+        html += `
+            <div style="border-top:1px solid #eee; margin-top:8px; padding-top:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong>接続点 (points)</strong>
+                    <button class="small-btn" id="btn-add-point" style="padding: 2px 4px; font-size:10px;"><i class="bi bi-plus"></i> 追加</button>
+                </div>
+            </div>
+            <div style="margin-top:6px; max-height: 120px; overflow-y:auto; padding-right:4px;">
+        `;
+        shape.points.forEach((pt, idx) => {
+            html += `
+                <div class="prop-list-item" data-idx="${idx}">
+                    <span style="font-size:10px; color:#666;">#${idx}: t=${Math.round(pt.t * 100) / 100}</span>
+                    <div style="display:flex; gap:4px; align-items:center;">
+                        <button class="prop-drag-btn small-btn" data-pt-idx="${idx}" title="t値をドラッグ調整" style="padding:2px 4px; font-size:10px;"><i class="bi bi-arrows-move"></i></button>
+                        <button class="prop-action-btn small-btn btn-change-bezier" data-pt-idx="${idx}" title="ベジェ変更" style="padding:2px 4px; font-size:10px;"><i class="bi bi-link"></i></button>
+                        <button class="prop-action-btn small-btn btn-delete-point" data-pt-idx="${idx}" style="padding:2px 4px; font-size:10px; background:#ff5252; color:#fff;"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    if (shape.strokeWidthData) {
+        html += `
+            <div style="border-top:1px solid #eee; margin-top:8px; padding-top:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong>太さデータ</strong>
+                    <button class="small-btn" id="btn-add-thickness" style="padding: 2px 4px; font-size:10px;"><i class="bi bi-plus"></i> 追加</button>
+                </div>
+            </div>
+            <div style="margin-top:6px; max-height: 120px; overflow-y:auto; padding-right:4px;">
+        `;
+        shape.strokeWidthData.forEach((sd, idx) => {
+            html += `
+                <div class="prop-list-item" data-idx="${idx}">
+                    <span style="font-size:10px; color:#666;">p=${sd.p}, w=${sd.w}</span>
+                    <div style="display:flex; gap:4px; align-items:center;">
+                        <button class="prop-drag-btn small-btn" data-thick-idx="${idx}" data-thick-type="p" title="位置pをドラッグ調整" style="padding:2px 4px; font-size:10px;">p</button>
+                        <button class="prop-drag-btn small-btn" data-thick-idx="${idx}" data-thick-type="w" title="太さwをドラッグ調整" style="padding:2px 4px; font-size:10px;">w</button>
+                        <button class="prop-action-btn small-btn btn-delete-thick" data-thick-idx="${idx}" style="padding:2px 4px; font-size:10px; background:#ff5252; color:#fff;"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    if (shape.patternCorners) {
+        html += `
+            <div style="border-top:1px solid #eee; margin-top:8px; padding-top:8px;"><strong>パターン角接続点 (インデックス)</strong></div>
+            <div style="margin-top:6px; display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+        `;
+        ['TL', 'TR', 'BR', 'BL'].forEach(corner => {
+            const pIdx = shape.patternCorners[corner] ?? 0;
+            html += `
+                <div class="prop-group">
+                    <span class="prop-label">${corner}</span>
+                    <div class="prop-row">
+                        <input type="number" id="prop-corner-${corner}" class="prop-input" value="${pIdx}" style="padding:2px 4px;">
+                        <button class="prop-drag-btn" data-corner="${corner}" style="padding:2px 4px;"><i class="bi bi-arrows-move"></i></button>
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    container.innerHTML = html;
+
+    const nameInput = document.getElementById('prop-name');
+    if (nameInput) {
+        nameInput.onchange = () => {
+            shape.name = nameInput.value;
+            pushHistory();
+            renderCanvas();
+            renderLayerList();
+        };
+    }
+
+    container.querySelectorAll('.prop-drag-btn[data-prop]').forEach(btn => {
+        const prop = btn.getAttribute('data-prop');
+        btn.onmousedown = (e) => {
+            handleValueDrag(e, (dx) => {
+                let step = 1;
+                if (prop === 'rotation') step = 0.5;
+                if (prop === 'r') step = 0.5;
+                shape.props[prop] = (shape.props[prop] ?? 0) + dx * step;
+                if (prop === 'r') shape.props[prop] = Math.max(1, shape.props[prop]);
+            });
+        };
     });
 
-    state.search.results = results;
-    if (results.length > 0) {
-        state.search.currentIndex = 0;
-    } else {
-        state.search.currentIndex = -1;
+    const fillCheck = document.getElementById('prop-fill-enabled');
+    if (fillCheck) {
+        fillCheck.onchange = () => {
+            shape.style.fillEnabled = fillCheck.checked;
+            pushHistory();
+            renderCanvas();
+        };
     }
-}
-
-function applySearchResult() {
-    const results = state.search.results;
-    const index = state.search.currentIndex;
-    if (index < 0 || index >= results.length) return;
-
-    state.focusedVertex = null; // 検索による図形選択変更時に頂点フォーカスをクリア
-    const current = results[index];
-    if (current.type === 'layer') {
-        state.selectedLayerId = current.id;
-        state.selectedShapeIds = []; // レイヤー選択時は図形選択をクリア
-    } else if (current.type === 'shape') {
-        state.selectedLayerId = current.layerId; // 図形を含むレイヤーをアクティブに
-        state.selectedShapeIds = [current.id];   // 図形を選択
+    const outlineCheck = document.getElementById('prop-outline-enabled');
+    if (outlineCheck) {
+        outlineCheck.onchange = () => {
+            shape.style.outline = outlineCheck.checked;
+            pushHistory();
+            renderCanvas();
+        };
     }
-    renderCanvas();
-}
+    const fillColor = document.getElementById('prop-fill-color');
+    if (fillColor) {
+        fillColor.onchange = () => {
+            shape.style.fill = fillColor.value;
+            pushHistory();
+            renderCanvas();
+        };
+    }
+    const opacityRange = document.getElementById('prop-opacity');
+    if (opacityRange) {
+        opacityRange.oninput = () => {
+            shape.style.opacity = parseFloat(opacityRange.value);
+            renderCanvas();
+        };
+        opacityRange.onchange = () => {
+            pushHistory();
+        };
+    }
+
+    const btnSelectPattern = document.getElementById('btn-select-pattern');
+    if (btnSelectPattern) {
+        btnSelectPattern.onclick = () => {
+            showTexturePicker((textureId) => {
+                shape.style.fillPattern = textureId;
+                pushHistory();
+                renderCanvas();
+                updatePropertiesPanel();
+            });
+        };
+    }
+    const btnClearPattern = document.getElementById('btn-clear-pattern');
+    if (btnClearPattern) {
+        btnClearPattern.onclick = () => {
+            shape.style.fillPattern = undefined;
+            pushHistory();
+            renderCanvas();
+            updatePropertiesPanel();
+        };
+    }
+
+    container.querySelectorAll('.prop-drag-btn[data-pt-idx]').forEach(btn => {
+        const ptIdx = parseInt(btn.getAttribute('data-pt-idx'), 10);
+        btn.onmousedown = (e) => {
+            handleValueDrag(e, (dx) => {
+                const pt = shape.points[ptIdx];
+                if (pt) {
+                    pt.t = Math.max(0, Math.min(1, pt.t + dx * 0.005));
+                }
+            });
+        };
+    });
+
+    container.querySelectorAll('.prop-list-item[data-idx]').forEach(item => {
+        const idx = parseInt(item.getAttribute('data-idx'), 10);
+        item.onmouseenter = () => {
+            state.hoveredPoint = { shapeId: shape.id, pointIdx: idx };
+            renderCanvas();
+        };
+        item.onmouseleave = () => {
+            state.hoveredPoint = null;
+            renderCanvas();
+        };
+    });
+
+    container.querySelectorAll('.btn-change-bezier[data-pt-idx]').forEach(btn => {
+        const ptIdx = parseInt(btn.getAttribute('data-pt-idx'), 10);
+        btn.onclick = () => {
+            state.interaction.mode = 'pick-point';
+            state.interaction.onPick = (picked) => {
+                const targetPoint = state.shapes[picked.shapeId]?.points?.[picked.pointIdx];
+                if (targetPoint && shape.points[ptIdx]) {
+                    shape.points[ptIdx].bezierId = targetPoint.bezierId;
+                    shape.points[ptIdx].t = targetPoint.t;
+                    pushHistory();
+                    resolveBezierDependencies();
+                    renderCanvas();
+                    updatePropertiesPanel();
+                }
+            };
+            renderCanvas();
+        };
+    });
+
+    container.querySelectorAll('.btn-delete-point[data-pt-idx]').forEach(btn => {
+        const ptIdx = parseInt(btn.getAttribute('data-pt-idx'), 10);
+        btn.onclick = () => {
+            if (shape.points.length <= 1) return;
+            shape.points.splice(ptIdx, 1);
+            pushHistory();
+            resolveBezierDependencies();
+            renderCanvas();
+            updatePropertiesPanel();
+        };
+    });
+
+    const btnAddPoint = document.getElementById('btn-add-point');
+    if (btnAddPoint) {
+        btnAddPoint.onclick = () => {
+            const lastBezId = shape.bezierIds[shape.bezierIds.length - 1];
+            shape.points.push({ bezierId: lastBezId, t: 1.0 });
+            pushHistory();
+            resolveBezierDependencies();
+            renderCanvas();
+            updatePropertiesPanel();
+        };
+    }
+
+    container.querySelectorAll('.prop-drag-btn[data-thick-idx]').forEach(btn => {
+        const thickIdx = parseInt(btn.getAttribute('data-thick-idx'), 10);
+        const type = btn.getAttribute('data-thick-type');
+        btn.onmousedown = (e) => {
+            handleValueDrag(e, (dx) => {
+                const sd = shape.strokeWidthData[thickIdx];
+                if (sd) {
+                    if (type === 'p') {
+                        sd.p = Math.max(0, Math.min(shape.points.length - 1, sd.p + dx * 0.05));
+                    } else if (type === 'w') {
+                        sd.w = Math.max(0, sd.w + dx * 0.2);
+                    }
+                }
+            });
+        };
+    });
+
+    container.querySelectorAll('.btn-delete-thick[data-thick-idx]').forEach(btn => {
+        const thickIdx = parseInt(btn.getAttribute('data-thick-idx'), 10);
+        btn.onclick = () => {
+            if (shape.strokeWidthData.length <= 1) return;
+            shape.strokeWidthData.splice(thickIdx, 1);
+            pushHistory();
+            resolveBezierDependencies();
+            renderCanvas();
+            updatePropertiesPanel();
+        };
+    });
+
+    const btnAddThickness = document.getElementById('btn-add-thickness');
+    if (btnAddThickness) {
+        btnAddThickness.onclick = () => {
+            shape.strokeWidthData.push({ p: Math.floor(shape.points.length / 2), w: 10 });
+            pushHistory();
+            resolveBezierDependencies();
+            renderCanvas();
+            updatePropertiesPanel();
+        };
+    }
+
+    container.querySelectorAll('.prop-drag-btn[data-corner]').forEach(btn => {
+        const corner = btn.getAttribute('data-corner');
+        btn.onmousedown = (e) => {
+            handleValueDrag(e, (dx) => {
+                const num = shape.points ? shape.points.length : 0;
+                if (num > 0) {
+                    shape.patternCorners[corner] = Math.max(0, Math.min(num - 1, Math.round((shape.patternCorners[corner] ?? 0) + dx * 0.05)));
+                }
+            });
+        };
+    });
+} /* updatePropertiesPanel */
+
+function handleValueDrag(e, callback) {
+    e.preventDefault();
+    const el = e.currentTarget;
+    
+    el.requestPointerLock = el.requestPointerLock || el.mozRequestPointerLock;
+    if (el.requestPointerLock) {
+        el.requestPointerLock();
+    }
+
+    const onMouseMove = (moveEvent) => {
+        const dx = moveEvent.movementX || 0;
+        callback(dx);
+        resolveBezierDependencies();
+        clearAllCaches();
+        renderCanvas();
+    };
+
+    const onMouseUp = () => {
+        if (document.exitPointerLock) {
+            document.exitPointerLock();
+        }
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        pushHistory();
+        renderCanvas();
+        updatePropertiesPanel();
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+} /* handleValueDrag */
+
+function showTexturePicker(onSelect) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.5); display: flex; justify-content: center;
+        align-items: center; z-index: 2000;
+    `;
+
+    const content = document.createElement('div');
+    content.className = 'modal-content';
+    content.style.cssText = `
+        background: #fff; border-radius: 8px; width: 80%; max-width: 400px;
+        display: flex; flex-direction: column; padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `;
+
+    content.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="margin:0; font-size:16px;">パターンテクスチャを選択</h3>
+            <button class="modal-close-btn" style="border:none; background:transparent; font-size:20px; cursor:pointer;">&times;</button>
+        </div>
+        <div class="texture-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap:8px; max-height:300px; overflow-y:auto; padding:8px 0;">
+            <div class="texture-card" data-id="sample" style="border:1px solid #ddd; border-radius:4px; padding:4px; cursor:pointer; text-align:center;">
+                <img src="image/sample.png" style="width:100%; height:45px; object-fit:contain;">
+                <span style="font-size:9px; display:block;">sample</span>
+            </div>
+            <div class="texture-card" data-id="brush_sample" style="border:1px solid #ddd; border-radius:4px; padding:4px; cursor:pointer; text-align:center;">
+                <img src="image/brush_sample.png" style="width:100%; height:45px; object-fit:contain;">
+                <span style="font-size:9px; display:block;">brush_sample</span>
+            </div>
+        </div>
+    `;
+
+    if (db) {
+        const tx = db.transaction('drawings', 'readonly');
+        const store = tx.objectStore('drawings');
+        const request = store.getAll();
+        request.onsuccess = () => {
+            const drawings = request.result;
+            const grid = content.querySelector('.texture-grid');
+            drawings.forEach(d => {
+                if (d.type === 'pattern' || d.type === 'canvas') {
+                    const card = document.createElement('div');
+                    card.className = 'texture-card';
+                    card.setAttribute('data-id', d.id);
+                    card.style.cssText = `border:1px solid #ddd; border-radius:4px; padding:4px; cursor:pointer; text-align:center;`;
+                    
+                    let imgSrc = 'image/sample.png';
+                    if (d.preview) {
+                        if (d.preview instanceof Blob) {
+                            imgSrc = URL.createObjectURL(d.preview);
+                        } else {
+                            imgSrc = d.preview;
+                        }
+                    }
+
+                    card.innerHTML = `
+                        <img src="${imgSrc}" style="width:100%; height:45px; object-fit:contain;">
+                        <span style="font-size:9px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${d.name}</span>
+                    `;
+                    grid.appendChild(card);
+                }
+            });
+
+            content.querySelectorAll('.texture-card').forEach(card => {
+                card.onclick = () => {
+                    const tid = card.getAttribute('data-id');
+                    onSelect(tid);
+                    document.body.removeChild(overlay);
+                };
+            });
+        };
+    }
+
+    content.querySelector('.modal-close-btn').onclick = () => {
+        document.body.removeChild(overlay);
+    };
+
+    overlay.appendChild(content);
+    document.body.appendChild(overlay);
+} /* showTexturePicker */
 
 /* EOF */
