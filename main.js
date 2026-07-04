@@ -328,7 +328,9 @@ function initEvents() {
     const stop = (e) => {
         state.input.isPointerDown = false;
         state.input.dragStart = null;
-        if (!state.dragInfo && e.target && e.target.closest && e.target.closest('#right-pane, #settings-panel, .modal-overlay')) {
+        const path = e.composedPath ? e.composedPath() : [];
+        const isUI = path.some(el => el.id === 'minimap-panel' || el.id === 'settings-panel' || (el.classList && el.classList.contains('modal-overlay')));
+        if (!state.dragInfo && isUI) {
             return;
         }
         handleInputUpdate('pointerup');
@@ -3335,7 +3337,7 @@ function updatePropertiesPanel() {
         `;
     }
 
-    if (shape.points) {
+    if (shape.points && Array.isArray(shape.points)) {
         html += `
             <div style="border-top:1px solid #eee; margin-top:8px; padding-top:8px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -3345,18 +3347,22 @@ function updatePropertiesPanel() {
             </div>
             <div style="margin-top:6px; max-height: 120px; overflow-y:auto; padding-right:4px;">
         `;
-        shape.points.forEach((pt, idx) => {
-            html += `
-                <div class="prop-list-item" data-idx="${idx}">
-                    <span style="font-size:10px; color:#666;">#${idx}: t=${Math.round(pt.t * 100) / 100}</span>
-                    <div style="display:flex; gap:4px; align-items:center;">
-                        <button class="prop-drag-btn small-btn" data-pt-idx="${idx}" title="t値をドラッグ調整" style="padding:2px 4px; font-size:10px;"><i class="bi bi-arrows-move"></i></button>
-                        <button class="prop-action-btn small-btn btn-change-bezier" data-pt-idx="${idx}" title="ベジェ変更" style="padding:2px 4px; font-size:10px;"><i class="bi bi-link"></i></button>
-                        <button class="prop-action-btn small-btn btn-delete-point" data-pt-idx="${idx}" style="padding:2px 4px; font-size:10px; background:#ff5252; color:#fff;"><i class="bi bi-trash"></i></button>
+        if (shape.points.length === 0) {
+            html += `<div style="text-align:center; color:#999; font-style:italic; font-size:11px; padding:4px;">なし</div>`;
+        } else {
+            shape.points.forEach((pt, idx) => {
+                html += `
+                    <div class="prop-list-item" data-idx="${idx}">
+                        <span style="font-size:10px; color:#666;">#${idx}: t=${Math.round((pt.t || 0) * 100) / 100}</span>
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            <button class="prop-drag-btn small-btn" data-pt-idx="${idx}" title="t値をドラッグ調整" style="padding:2px 4px; font-size:10px;"><i class="bi bi-arrows-move"></i></button>
+                            <button class="prop-action-btn small-btn btn-change-bezier" data-pt-idx="${idx}" title="ベジェ変更" style="padding:2px 4px; font-size:10px;"><i class="bi bi-link"></i></button>
+                            <button class="prop-action-btn small-btn btn-delete-point" data-pt-idx="${idx}" style="padding:2px 4px; font-size:10px; background:#ff5252; color:#fff;"><i class="bi bi-trash"></i></button>
+                        </div>
                     </div>
-                </div>
-            `;
-        });
+                `;
+            });
+        }
         html += `</div>`;
     }
 
