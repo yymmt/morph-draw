@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>MorphDraw</title>
     <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="image/icon.png" sizes="any">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -153,12 +154,15 @@
                         <div class="settings-group">
                             <label class="settings-label">キャンバスサイズ</label>
                             <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-                                <input id="input-canvas-width" class="settings-input" type="number" placeholder="幅" style="width: 100px;">
+                                <input id="input-canvas-width" class="settings-input" type="number" placeholder="幅"
+                                    style="width: 100px;">
                                 <span style="color: #666;">x</span>
-                                <input id="input-canvas-height" class="settings-input" type="number" placeholder="高さ" style="width: 100px;">
+                                <input id="input-canvas-height" class="settings-input" type="number" placeholder="高さ"
+                                    style="width: 100px;">
                             </div>
                         </div>
-                        <button id="btn-save-image-settings" class="small-btn" style="width: 100%; padding: 8px 12px; margin-top: 8px;">設定を保存</button>
+                        <button id="btn-save-image-settings" class="small-btn"
+                            style="width: 100%; padding: 8px 12px; margin-top: 8px;">設定を保存</button>
                     </div>
                     <!-- Common Settings Tab -->
                     <div class="settings-tab-content" id="tab-common">
@@ -185,26 +189,34 @@
                         <button id="btn-add-layer" class="small-btn"><i class="bi bi-plus-lg"></i></button>
                     </div>
                     <div class="search-container" style="padding-bottom: 8px;">
-                        <input id="layer-search" type="text" placeholder="検索 (Shape名/ID)..." style="width:100%; padding:6px; background:#f0f2f5; border:1px solid #ccd1d9; color:#333; border-radius:4px; font-size:12px; outline:none;">
+                        <input id="layer-search" type="text" placeholder="検索 (Shape名/ID)..."
+                            style="width:100%; padding:6px; background:#f0f2f5; border:1px solid #ccd1d9; color:#333; border-radius:4px; font-size:12px; outline:none;">
                     </div>
                     <div id="layer-list" class="layer-list-container"></div>
                 </div>
-                <div id="pivot-panel" class="panel-section-small" style="border-top: 1px solid #ddd; padding: 8px 16px;">
+                <div id="pivot-panel" class="panel-section-small"
+                    style="border-top: 1px solid #ddd; padding: 8px 16px;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="font-size:12px; color:#555; font-weight:600;">変形ピボット:</span>
                         <div class="pivot-btn-group" style="display:flex; gap:4px;">
-                            <button id="btn-pivot-combined" class="small-btn active" title="選択全体の中心" style="padding: 4px 6px;"><i class="bi bi-bounding-box-circles"></i></button>
-                            <button id="btn-pivot-active" class="small-btn" title="アクティブShapeの中心" style="padding: 4px 6px; background: #888;"><i class="bi bi-crosshair"></i></button>
-                            <button id="btn-pivot-individual" class="small-btn" title="各々の中心" style="padding: 4px 6px; background: #888;"><i class="bi bi-app-indicator"></i></button>
+                            <button id="btn-pivot-combined" class="small-btn active" title="選択全体の中心"
+                                style="padding: 4px 6px;"><i class="bi bi-bounding-box-circles"></i></button>
+                            <button id="btn-pivot-active" class="small-btn" title="アクティブShapeの中心"
+                                style="padding: 4px 6px; background: #888;"><i class="bi bi-crosshair"></i></button>
+                            <button id="btn-pivot-individual" class="small-btn" title="各々の中心"
+                                style="padding: 4px 6px; background: #888;"><i class="bi bi-app-indicator"></i></button>
                         </div>
                     </div>
                 </div>
-                <div id="properties-panel" class="panel-section" style="border-top: 1px solid #ddd; flex: 1.5; display:flex; flex-direction:column; overflow:hidden;">
+                <div id="properties-panel" class="panel-section"
+                    style="border-top: 1px solid #ddd; flex: 1.5; display:flex; flex-direction:column; overflow:hidden;">
                     <div class="panel-header" style="margin-bottom: 8px;">
                         <h3>プロパティ</h3>
                     </div>
-                    <div id="properties-container" class="properties-container" style="flex:1; overflow-y:auto; font-size: 12px; color: #555;">
-                        <p style="color: #999; font-style: italic; text-align: center; margin-top: 20px;">要素を選択してください</p>
+                    <div id="properties-container" class="properties-container"
+                        style="flex:1; overflow-y:auto; font-size: 12px; color: #555;">
+                        <p style="color: #999; font-style: italic; text-align: center; margin-top: 20px;">要素を選択してください
+                        </p>
                     </div>
                 </div>
                 <button id="btn-toggle-minimap" class="toggle-btn"><i class="bi bi-chevron-double-left"></i></button>
@@ -214,7 +226,7 @@
 
     <script src="mdmath.js?v=80"></script>
     <script src="webgl_renderer.js?v=81"></script>
-    <script src="main.js?v=89"></script>
+    <script src="main.js?v=90"></script>
     <script src="test.js?v=87"></script>
 </body>
 

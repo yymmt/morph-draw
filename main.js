@@ -271,6 +271,40 @@ function initEvents() {
         const startPt = getSVGPoint(e, viewport);
         state.input.isPointerDown = true;
         state.input.dragStart = startPt;
+
+        const target = e.target;
+        if (target && target.classList && target.classList.contains('transform-handle')) {
+            e.stopPropagation();
+            const shapeId = target.getAttribute('data-shape-id') || null;
+            let type, corner;
+            if (target.classList.contains('scale-handle')) {
+                type = 'scale';
+                corner = target.getAttribute('data-corner');
+            } else if (target.classList.contains('rotate-handle')) {
+                type = 'rotate';
+            }
+            
+            let pivot;
+            if (state.transformPivotMode === 'individual' && shapeId) {
+                const s = state.shapes[shapeId];
+                pivot = s && s.props ? { x: s.props.x, y: s.props.y } : startPt;
+            } else {
+                const pivots = getPivotPoints();
+                pivot = pivots.length > 0 ? pivots[0] : startPt;
+            }
+
+            state.dragInfo = {
+                type: type,
+                corner: corner,
+                shapeId: shapeId,
+                start: { ...startPt },
+                last: { ...startPt },
+                pivot: pivot,
+                initialShapes: JSON.parse(JSON.stringify(state.shapes))
+            };
+            return;
+        }
+
         handleInputUpdate('pointerdown');
     }); /* svg.pointerdown */
 
@@ -1256,6 +1290,43 @@ async function handleInputUpdate(event, detail, rawEvent) {
                         state.dragInfo.last = { ...pt };
                         needsRender = true;
                     }
+                } else if (state.dragInfo.type === 'scale') {
+                    const pivot = state.dragInfo.pivot;
+                    const start = state.dragInfo.start;
+                    const dStart = Math.hypot(start.x - pivot.x, start.y - pivot.y);
+                    const dCurrent = Math.hypot(pt.x - pivot.x, pt.y - pivot.y);
+                    let factor = dStart > 0.1 ? dCurrent / dStart : 1.0;
+                    
+                    const vStart = { x: start.x - pivot.x, y: start.y - pivot.y };
+                    const vCurrent = { x: pt.x - pivot.x, y: pt.y - pivot.y };
+                    const dot = vStart.x * vCurrent.x + vStart.y * vCurrent.y;
+                    if (dot < 0) {
+                        factor = -factor;
+                    }
+
+                    const targetIds = state.dragInfo.shapeId ? [state.dragInfo.shapeId] : state.selectedShapeIds;
+                    targetIds.forEach(id => {
+                        if (state.dragInfo.initialShapes[id]) {
+                            state.shapes[id] = JSON.parse(JSON.stringify(state.dragInfo.initialShapes[id]));
+                        }
+                    });
+                    scaleShapes(targetIds, factor, pivot.x, pivot.y);
+                    needsRender = true;
+                } else if (state.dragInfo.type === 'rotate') {
+                    const pivot = state.dragInfo.pivot;
+                    const start = state.dragInfo.start;
+                    const angleStart = Math.atan2(start.y - pivot.y, start.x - pivot.x);
+                    const angleCurrent = Math.atan2(pt.y - pivot.y, pt.x - pivot.x);
+                    const angleDiff = (angleCurrent - angleStart) * 180 / Math.PI;
+
+                    const targetIds = state.dragInfo.shapeId ? [state.dragInfo.shapeId] : state.selectedShapeIds;
+                    targetIds.forEach(id => {
+                        if (state.dragInfo.initialShapes[id]) {
+                            state.shapes[id] = JSON.parse(JSON.stringify(state.dragInfo.initialShapes[id]));
+                        }
+                    });
+                    rotateShapes(targetIds, angleDiff, pivot.x, pivot.y);
+                    needsRender = true;
                 }
             }
 
@@ -2039,6 +2110,9 @@ function renderCanvas() {
         viewport.appendChild(marqueeRect);
     }
 
+    // 変形ハンドルの描画
+    renderTransformHandles(viewport);
+
     // 変形ピボットの描画
     const pivots = getPivotPoints();
     pivots.forEach(p => {
@@ -2151,6 +2225,101 @@ function getPivotPoints() {
     } else {
         const bounds = getCombinedBounds(targetIds);
         return bounds ? [{ x: bounds.cx, y: bounds.cy }] : [];
+    }
+}
+
+function renderTransformHandles(viewport) {
+    if (state.selectedShapeIds.length === 0) return;
+    if (state.interaction.mode === 'pick-point') return;
+
+    const padding = 8;
+    const drawBoxHandles = (bounds, shapeId = null) => {
+        if (!bounds) return;
+        const x1 = bounds.x - padding;
+        const y1 = bounds.y - padding;
+        const w1 = bounds.w + padding * 2;
+        const h1 = bounds.h + padding * 2;
+
+        // 破線枠
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', x1);
+        rect.setAttribute('y', y1);
+        rect.setAttribute('width', w1);
+        rect.setAttribute('height', h1);
+        rect.setAttribute('fill', 'none');
+        rect.setAttribute('stroke', '#2196F3');
+        rect.setAttribute('stroke-width', '1');
+        rect.setAttribute('stroke-dasharray', '3,3');
+        viewport.appendChild(rect);
+
+        // 四隅のスケールハンドル
+        const corners = [
+            { name: 'TL', x: x1, y: y1, cursor: 'nwse-resize' },
+            { name: 'TR', x: x1 + w1, y: y1, cursor: 'nesw-resize' },
+            { name: 'BR', x: x1 + w1, y: y1 + h1, cursor: 'nwse-resize' },
+            { name: 'BL', x: x1, y: y1 + h1, cursor: 'nesw-resize' }
+        ];
+
+        corners.forEach(c => {
+            const handle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            handle.setAttribute('x', c.x - 3);
+            handle.setAttribute('y', c.y - 3);
+            handle.setAttribute('width', '6');
+            handle.setAttribute('height', '6');
+            handle.setAttribute('fill', 'white');
+            handle.setAttribute('stroke', '#2196F3');
+            handle.setAttribute('stroke-width', '1');
+            handle.setAttribute('class', 'transform-handle scale-handle');
+            handle.setAttribute('data-corner', c.name);
+            if (shapeId) {
+                handle.setAttribute('data-shape-id', shapeId);
+            }
+            handle.style.cursor = c.cursor;
+            viewport.appendChild(handle);
+        });
+
+        // 回転ノブへの縦線
+        const cx = x1 + w1 / 2;
+        const cy = y1;
+        const ry = cy - 20;
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', cx);
+        line.setAttribute('y1', cy);
+        line.setAttribute('x2', cx);
+        line.setAttribute('y2', ry);
+        line.setAttribute('stroke', '#2196F3');
+        line.setAttribute('stroke-width', '1');
+        viewport.appendChild(line);
+
+        // 回転ノブ
+        const knob = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        knob.setAttribute('cx', cx);
+        knob.setAttribute('cy', ry);
+        knob.setAttribute('r', '4');
+        knob.setAttribute('fill', '#2196F3');
+        knob.setAttribute('stroke', 'white');
+        knob.setAttribute('stroke-width', '1');
+        knob.setAttribute('class', 'transform-handle rotate-handle');
+        if (shapeId) {
+            knob.setAttribute('data-shape-id', shapeId);
+        }
+        knob.style.cursor = 'grab';
+        viewport.appendChild(knob);
+    };
+
+    if (state.transformPivotMode === 'individual') {
+        state.selectedShapeIds.forEach(id => {
+            const bounds = getCombinedBounds([id]);
+            drawBoxHandles(bounds, id);
+        });
+    } else if (state.transformPivotMode === 'active') {
+        const activeId = state.selectedShapeIds[state.selectedShapeIds.length - 1];
+        const bounds = getCombinedBounds([activeId]);
+        drawBoxHandles(bounds, activeId);
+    } else {
+        const bounds = getCombinedBounds(state.selectedShapeIds);
+        drawBoxHandles(bounds, null);
     }
 }
 
@@ -3091,7 +3260,34 @@ function updatePropertiesPanel() {
 
     if (shape.props) {
         html += `<div style="border-top:1px solid #eee; margin-top:8px; padding-top:8px;"><strong>幾何プロパティ</strong></div>`;
+        const hasX = shape.props.x !== undefined;
+        const hasY = shape.props.y !== undefined;
+        
+        if (hasX && hasY) {
+            html += `
+                <div class="prop-group" style="margin-top:6px;">
+                    <span class="prop-label">位置 (X, Y)</span>
+                    <div class="prop-row" style="align-items: center; gap: 8px;">
+                        <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <span style="font-size:10px; color:#666; width:12px;">X</span>
+                                <input type="number" id="prop-val-x" class="prop-input" value="${Math.round(shape.props.x * 100) / 100}" style="font-size:11px; padding:2px 4px;">
+                            </div>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <span style="font-size:10px; color:#666; width:12px;">Y</span>
+                                <input type="number" id="prop-val-y" class="prop-input" value="${Math.round(shape.props.y * 100) / 100}" style="font-size:11px; padding:2px 4px;">
+                            </div>
+                        </div>
+                        <div class="prop-drag-2d-pad" id="prop-drag-2d-pad" style="width:40px; height:40px; border:1px solid #ccc; border-radius:4px; background:#fafafa; cursor:move; display:flex; justify-content:center; align-items:center; flex-shrink:0;" title="ドラッグで位置調整">
+                            <i class="bi bi-arrows-move" style="font-size:12px; color:#888;"></i>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         Object.entries(shape.props).forEach(([key, val]) => {
+            if ((key === 'x' || key === 'y') && hasX && hasY) return;
             html += `
                 <div class="prop-group" style="margin-top:6px;">
                     <span class="prop-label">${key}</span>
@@ -3206,15 +3402,61 @@ function updatePropertiesPanel() {
         html += `</div>`;
     }
 
+    const activeElementId = document.activeElement ? document.activeElement.id : null;
+    const selectionStart = document.activeElement ? document.activeElement.selectionStart : null;
+    const selectionEnd = document.activeElement ? document.activeElement.selectionEnd : null;
+
     container.innerHTML = html;
+
+    if (activeElementId) {
+        const activeEl = document.getElementById(activeElementId);
+        if (activeEl) {
+            activeEl.focus();
+            if (selectionStart !== null && selectionEnd !== null && activeEl.setSelectionRange) {
+                try { activeEl.setSelectionRange(selectionStart, selectionEnd); } catch(err){}
+            }
+        }
+    }
 
     const nameInput = document.getElementById('prop-name');
     if (nameInput) {
-        nameInput.onchange = () => {
+        nameInput.oninput = () => {
             shape.name = nameInput.value;
-            pushHistory();
-            renderCanvas();
             renderLayerList();
+        };
+        nameInput.onchange = () => {
+            pushHistory();
+        };
+    }
+
+    if (shape.props) {
+        Object.keys(shape.props).forEach(key => {
+            const inputEl = document.getElementById(`prop-val-${key}`);
+            if (inputEl) {
+                inputEl.oninput = () => {
+                    let val = parseFloat(inputEl.value);
+                    if (isNaN(val)) val = 0;
+                    shape.props[key] = val;
+                    markShapeDirty(shape.id);
+                    resolveBezierDependencies();
+                    clearAllCaches();
+                    renderCanvas();
+                };
+                inputEl.onchange = () => {
+                    pushHistory();
+                };
+            }
+        });
+    }
+
+    const drag2DPad = document.getElementById('prop-drag-2d-pad');
+    if (drag2DPad) {
+        drag2DPad.onmousedown = (e) => {
+            handleValueDrag2D(e, (dx, dy) => {
+                if (shape.props.x !== undefined) shape.props.x += dx;
+                if (shape.props.y !== undefined) shape.props.y += dy;
+                markShapeDirty(shape.id);
+            });
         };
     }
 
@@ -3249,16 +3491,24 @@ function updatePropertiesPanel() {
     }
     const fillColor = document.getElementById('prop-fill-color');
     if (fillColor) {
-        fillColor.onchange = () => {
+        fillColor.oninput = () => {
             shape.style.fill = fillColor.value;
-            pushHistory();
+            markShapeDirty(shape.id);
             renderCanvas();
+        };
+        fillColor.onchange = () => {
+            pushHistory();
         };
     }
     const opacityRange = document.getElementById('prop-opacity');
     if (opacityRange) {
         opacityRange.oninput = () => {
             shape.style.opacity = parseFloat(opacityRange.value);
+            const label = opacityRange.closest('.prop-group')?.querySelector('.prop-label');
+            if (label) {
+                label.textContent = `不透明度 (${Math.round((shape.style.opacity ?? 1) * 100)}%)`;
+            }
+            markShapeDirty(shape.id);
             renderCanvas();
         };
         opacityRange.onchange = () => {
@@ -3394,6 +3644,30 @@ function updatePropertiesPanel() {
         };
     }
 
+    if (shape.patternCorners) {
+        ['TL', 'TR', 'BR', 'BL'].forEach(corner => {
+            const inputEl = document.getElementById(`prop-corner-${corner}`);
+            if (inputEl) {
+                inputEl.oninput = () => {
+                    let val = parseInt(inputEl.value, 10);
+                    if (isNaN(val)) val = 0;
+                    const num = shape.points ? shape.points.length : 0;
+                    if (num > 0) {
+                        shape.patternCorners[corner] = Math.max(0, Math.min(num - 1, val));
+                    }
+                    markShapeDirty(shape.id);
+                    resolveBezierDependencies();
+                    clearAllCaches();
+                    renderCanvas();
+                };
+                inputEl.onchange = () => {
+                    pushHistory();
+                    updatePropertiesPanel();
+                };
+            }
+        });
+    }
+
     container.querySelectorAll('.prop-drag-btn[data-corner]').forEach(btn => {
         const corner = btn.getAttribute('data-corner');
         btn.onmousedown = (e) => {
@@ -3416,7 +3690,9 @@ function handleValueDrag(e, callback) {
         el.requestPointerLock();
     }
 
+    let isReleased = false;
     const onMouseMove = (moveEvent) => {
+        if (isReleased) return;
         const dx = moveEvent.movementX || 0;
         callback(dx);
         resolveBezierDependencies();
@@ -3424,20 +3700,79 @@ function handleValueDrag(e, callback) {
         renderCanvas();
     };
 
-    const onMouseUp = () => {
-        if (document.exitPointerLock) {
+    const cleanup = () => {
+        if (isReleased) return;
+        isReleased = true;
+        if (document.exitPointerLock && document.pointerLockElement === el) {
             document.exitPointerLock();
         }
         document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
+        document.removeEventListener('mouseup', cleanup);
+        document.removeEventListener('pointerup', cleanup);
+        document.removeEventListener('pointerlockchange', onLockChange);
         pushHistory();
         renderCanvas();
         updatePropertiesPanel();
     };
 
+    const onLockChange = () => {
+        if (document.pointerLockElement !== el) {
+            cleanup();
+        }
+    };
+
     document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('mouseup', cleanup);
+    document.addEventListener('pointerup', cleanup);
+    document.addEventListener('pointerlockchange', onLockChange);
 } /* handleValueDrag */
+
+function handleValueDrag2D(e, callback) {
+    e.preventDefault();
+    const el = e.currentTarget;
+    
+    el.requestPointerLock = el.requestPointerLock || el.mozRequestPointerLock;
+    if (el.requestPointerLock) {
+        el.requestPointerLock();
+    }
+
+    let isReleased = false;
+    const onMouseMove = (moveEvent) => {
+        if (isReleased) return;
+        const dx = moveEvent.movementX || 0;
+        const dy = moveEvent.movementY || 0;
+        callback(dx, dy);
+        resolveBezierDependencies();
+        clearAllCaches();
+        renderCanvas();
+    };
+
+    const cleanup = () => {
+        if (isReleased) return;
+        isReleased = true;
+        if (document.exitPointerLock && document.pointerLockElement === el) {
+            document.exitPointerLock();
+        }
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', cleanup);
+        document.removeEventListener('pointerup', cleanup);
+        document.removeEventListener('pointerlockchange', onLockChange);
+        pushHistory();
+        renderCanvas();
+        updatePropertiesPanel();
+    };
+
+    const onLockChange = () => {
+        if (document.pointerLockElement !== el) {
+            cleanup();
+        }
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', cleanup);
+    document.addEventListener('pointerup', cleanup);
+    document.addEventListener('pointerlockchange', onLockChange);
+} /* handleValueDrag2D */
 
 function showTexturePicker(onSelect) {
     const overlay = document.createElement('div');
