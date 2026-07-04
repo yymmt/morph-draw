@@ -210,7 +210,7 @@ body {
     position: absolute;
     right: 0;
     top: 0;
-    width: 200px;
+    width: 240px;
     height: 100%;
     background: rgba(255, 255, 255, 0.9);
     border-left: 1px solid #ddd;
@@ -221,12 +221,12 @@ body {
 }
 
 #minimap-panel.collapsed {
-    transform: translateX(200px);
+    transform: translateX(240px);
 }
 
 #minimap-canvas {
-    width: 160px;
-    height: 160px;
+    width: 200px;
+    height: 200px;
     background: #fff;
     margin: 16px auto;
     border: 1px solid #ccc;
@@ -895,8 +895,13 @@ body {
     gap: 6px;
 }
 
+/* .prop-row */
+
 .prop-input {
     flex: 1;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
     background: #f7f9fa;
     border: 1px solid #ccd1d9;
     border-radius: 4px;

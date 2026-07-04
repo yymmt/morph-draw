@@ -328,6 +328,9 @@ function initEvents() {
     const stop = (e) => {
         state.input.isPointerDown = false;
         state.input.dragStart = null;
+        if (!state.dragInfo && e.target && e.target.closest && e.target.closest('#right-pane, #settings-panel, .modal-overlay')) {
+            return;
+        }
         handleInputUpdate('pointerup');
     }; /* stop */
     window.addEventListener('pointerup', stop);
