@@ -35,7 +35,6 @@ const state = {
     },
     lastHit: null, // レイヤー操作対象特定用
     lodPrecision: 10, // 編集時10px, 確定時1px
-    lastMousePt: null, // 最新のマウス座標
     selectedLayerId: null, // 現在アクティブなレイヤーID
     maxDrawingId: 0, // 既存図面IDの最大値キャッシュ
     drawingName: '', // 現在開いている図面の名前
@@ -54,13 +53,19 @@ const state = {
     },
     input: {
         keys: {},           // 押されているキーの状態 { 'm': true, ... }
+        pointerOnSVG: { x: 0, y: 0 }, // 最新のマウス座標(SVG座標系) 廃止予定
+        dragStartOnSVG: null,    // ドラッグ開始時のポインタ座標(SVG座標系) 廃止予定
         pointer: { x: 0, y: 0 }, // 最新のマウス座標
-        dragStart: null,    // ドラッグ開始時のポインタ座標
+        aPointer: { x: 0, y: 0 }, // ドラッグ開始時のポインタ座標
+        dPointer: { x: 0, y: 0 }, // 直近のマウス移動量 ////
+        deltaY: 0, // 直近のホイール量 ////
+        modifier: 'no_mod', // モディファイアキーの状態 ////
+        lock: false, //// ドラッグなどの継続イベント中は、他のイベントの開始をしない。
         isPointerDown: false, // ポインタが押されているか
-        isHoveringMinimap: false // 新規：ミニマップ上にマウスがあるか
+        hoverOn: '', // hoverしたdomのidを保持 ////
     },
     minimap: {
-        zoom: 1.0           // 新規：ミニマップのズーム倍率
+        zoom: 1.0           // ミニマップのズーム倍率
     },
     webglTextures: {},
     canvas: {
@@ -85,6 +90,26 @@ const state = {
     }
 }; /* state */
 
+let db; /* IndexedDB インスタンス */
+
+const getDomsOf = (elm, pat) => Array.from(elm.querySelectorAll(pat));
+const getDomOf = (elm, pat) => getDomsOf(elm, pat)[0];
+const getDoms = (pat) => getDomsOf(document, pat);
+const getDom = (pat) => getDomsOf(document, pat)[0];
+const toggleClassDom = (pat, className) => getDom(pat)?.classList.toggle(className);
+const addClassDom = (pat, className) => getDom(pat)?.classList.add(className);
+const removeClassDom = (pat, className) => getDom(pat)?.classList.remove(className);
+const newElm = (elementName, attributes) => Object.assign(document.createElement(elementName), attributes);
+const filterAttribute = (obj, keys) => Object.fromEntries(keys.map(key => [key, obj[key]]));
+const getSVGPoint = (e, svg, vp) => Object.assign(svg.createSVGPoint(), state.input.pointer).matrixTransform(vp.getScreenCTM().inverse());
+const getMainCanvasSVGPoint = () => getSVGPoint(null, getDom('#guide-svg'), getDom('#guide-svg #viewport'));
+const isFocusEditable = () => !!(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable));
+
+document.addEventListener('DOMContentLoaded', () => {
+    initDB();
+    initOffscreenCanvases();
+    initEvents();
+});
 
 function initializeIdCounter() {
     const allIds = [...Object.keys(state.shapes), ...Object.keys(state.beziers)];
@@ -112,29 +137,11 @@ function stateReplacer(key, value) {
     return value;
 }
 
-
-
-let db; /* IndexedDB インスタンス */
-
-document.addEventListener('DOMContentLoaded', () => {
-    initDB();
-    initOffscreenCanvases();
-    initEvents();
-});
-
 function initOffscreenCanvases() {
-    state.canvas.underOffscreen = document.createElement('canvas');
-    state.canvas.underOffscreen.width = state.canvas.width;
-    state.canvas.underOffscreen.height = state.canvas.height;
-
-    state.canvas.activeOffscreen = document.createElement('canvas');
-    state.canvas.activeOffscreen.width = state.canvas.width;
-    state.canvas.activeOffscreen.height = state.canvas.height;
-
-    state.canvas.overOffscreen = document.createElement('canvas');
-    state.canvas.overOffscreen.width = state.canvas.width;
-    state.canvas.overOffscreen.height = state.canvas.height;
-
+    const sizeAttrs = filterAttribute(state.canvas, ['width', 'height']);
+    state.canvas.underOffscreen = newElm('canvas', sizeAttrs);
+    state.canvas.activeOffscreen = newElm('canvas', sizeAttrs);
+    state.canvas.overOffscreen = newElm('canvas', sizeAttrs);
     initWebGLPatternRenderer();
 }
 
@@ -158,7 +165,7 @@ function resizeOffscreenCanvases() {
 }
 
 // IndexedDBから指定されたIDの図面プレビュー画像を非同期ロードし、WebGLテクスチャとして登録する。
-// MEMO: preview Blobは保存時に512x512以内にリサイズされているが、パターンはたいてい小さいのでそのまま使う。
+// preview Blobは保存時に512x512以内にリサイズされているが、パターンはたいてい小さいのでそのまま使う。
 function loadDrawingTexture(id) {
     return new Promise((resolve) => {
         if (!id) {
@@ -208,7 +215,7 @@ function loadDrawingTexture(id) {
                             gl.bindTexture(gl.TEXTURE_2D, texture);
                             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
                             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-                            
+
                             const isPowerOf2 = (val) => (val & (val - 1)) === 0;
                             const isPot = isPowerOf2(img.width) && isPowerOf2(img.height);
                             if (isPot) {
@@ -255,92 +262,81 @@ function loadDrawingTexture(id) {
     });
 }
 
+function registerHoverListener(elm) {
+    elm.addEventListener('mouseenter', () => {
+        state.input.hoverOn = elm.id;
+    });
+    elm.addEventListener('mouseleave', () => {
+        state.input.hoverOn = '';
+    });
+}
+
 function initEvents() {
-    const btnNewDraw = document.getElementById('btn-new-draw');
-    const newDrawMenu = document.getElementById('new-draw-menu');
 
-    if (btnNewDraw && newDrawMenu) {
-        btnNewDraw.onclick = (e) => {
-            e.stopPropagation();
-            newDrawMenu.classList.toggle('hidden');
-        };
-
-        const btnNewCanvas = document.getElementById('btn-new-canvas');
-        if (btnNewCanvas) {
-            btnNewCanvas.onclick = (e) => {
-                newDrawMenu.classList.add('hidden');
-                startNewDrawing('canvas');
-            };
-        }
-
-        const btnNewPattern = document.getElementById('btn-new-pattern');
-        if (btnNewPattern) {
-            btnNewPattern.onclick = (e) => {
-                newDrawMenu.classList.add('hidden');
-                startNewDrawing('pattern');
-            };
-        }
-
-        const btnNewImport = document.getElementById('btn-new-import');
-        if (btnNewImport) {
-            btnNewImport.onclick = (e) => {
-                newDrawMenu.classList.add('hidden');
-                importImageFile();
-            };
-        }
-
-        window.addEventListener('click', () => {
-            newDrawMenu.classList.add('hidden');
-        });
-    }
-
-    document.getElementById('btn-back-gallery').onclick = async () => {
+    getDom('#btn-back-gallery').onclick = async () => {
         await saveDrawing();
         loadGallery();
         switchView('gallery');
     }; /* btn-back-gallery.onclick */
 
-    document.getElementById('btn-toggle-minimap').onclick = () => {
-        const panel = document.getElementById('minimap-panel');
+    getDom('#btn-toggle-minimap').onclick = () => {
+        const panel = getDom('#minimap-panel');
         panel.classList.toggle('collapsed');
-        const icon = document.querySelector('#btn-toggle-minimap i');
+        const icon = getDom('#btn-toggle-minimap i');
         if (icon) {
             const isCollapsed = panel.classList.contains('collapsed');
             icon.className = `bi ${isCollapsed ? 'bi-chevron-double-left' : 'bi-chevron-double-right'}`;
         }
     }; /* btn-toggle-minimap.onclick */
 
-    const svg = document.getElementById('guide-svg');
-    const minimapCanvas = document.getElementById('minimap-canvas');
+    document.body.onclick = (event) => {
+        handleInputUpdate_test(event);
+    };
+
+    const svg = getDom('#guide-svg');
+    const minimapCanvas = getDom('#minimap-canvas');
+
+    //// initEvents内でhandleInputUpdateを呼び出す際は、"単に「ブラウザからデータを受け取って state.input に転記し、次に流す」という単純作業だけを行う" よう修正予定。"座標変換やビューの判定など、アプリ内のロジックは一切含めません。"
+    //// "wheel イベントの中で e.ctrlKey や e.deltaY に応じて処理を分岐させるロジックも、ディスパッチャ側（またはマップ側）で「ctrl_wheel」や「wheel」としてきれいに整理でき、initEvents が汚れ"ないようにする予定。
 
     svg.addEventListener('pointerdown', (e) => {
-        const viewport = svg.getElementById('viewport') || svg;
-        const startPt = getSVGPoint(e, viewport);
+        const startPt = getMainCanvasSVGPoint(); //// 上記方針で修正予定。
         state.input.isPointerDown = true;
-        state.input.dragStart = startPt;
+        state.input.dragStartOnSVG = startPt;
         handleInputUpdate('pointerdown');
     }); /* svg.pointerdown */
+
+    window.addEventListener('wheel', (event) => {
+        state.input.modifier = getModifierState(event);
+        state.input.deltaY = event.deltaY;
+        handleInputUpdate_test(event);
+        event.preventDefault();
+    }, { passive: false });
 
     if (minimapCanvas) {
         minimapCanvas.addEventListener('pointerdown', (e) => {
             state.input.isPointerDown = true;
-            // ミニマップ上の pointerdown 時も getSVGPoint で座標変換して dragStart に入れる
-            const pt = getSVGPoint(e, svg.getElementById('viewport') || svg);
-            state.input.dragStart = pt;
+            const pt = getMainCanvasSVGPoint(); //// 上記方針で修正予定。
+            state.input.dragStartOnSVG = pt;
             handleInputUpdate('pointerdown');
         });
     }
 
     window.addEventListener('pointermove', (e) => {
-        const pt = getSVGPoint(e, svg.getElementById('viewport') || svg);
-        state.input.pointer = { x: pt.x, y: pt.y };
-        state.lastMousePt = { x: pt.x, y: pt.y };
-        handleInputUpdate('pointermove');
+        if (state.view === 'canvas') {  //// 上記方針で修正予定。
+            const pt = getMainCanvasSVGPoint(); //// 上記方針で修正予定。
+            state.input.pointerOnSVG = { x: pt.x, y: pt.y };
+
+            state.input.dPointer = { x: e.clientX - state.input.pointer.x, y: e.clientY - state.input.pointer.y };
+            state.input.pointer = { x: e.clientX, y: e.clientY };
+
+            handleInputUpdate('pointermove');
+        }
     }); /* window.pointermove */
 
     const stop = (e) => {
         state.input.isPointerDown = false;
-        state.input.dragStart = null;
+        state.input.dragStartOnSVG = null;
         handleInputUpdate('pointerup');
     }; /* stop */
     window.addEventListener('pointerup', stop);
@@ -348,53 +344,49 @@ function initEvents() {
 
     window.addEventListener('keydown', async e => {
         if (e.repeat) return; // MEMO 左右キーなどはrepeatで連続移動したい気もするが優先度低。
-        if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable)) {
-            return;
-        }
+        if (isFocusEditable()) return;
         state.input.keys[e.key] = true;
         await handleInputUpdate('keydown', e.key, e);
     }); /* window.keydown */
 
     window.addEventListener('keyup', async e => {
-        if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable)) {
-            return;
-        }
+        if (isFocusEditable()) return;
         state.input.keys[e.key] = false;
         await handleInputUpdate('keyup', e.key, e);
     }); /* window.keyup */
 
-    document.getElementById('btn-toggle-settings').onclick = () => {
-        const panel = document.getElementById('settings-panel');
+    getDom('#btn-toggle-settings').onclick = () => {
+        const panel = getDom('#settings-panel');
         if (panel) {
             panel.classList.toggle('collapsed');
         }
     };
 
-    document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+    getDoms('.settings-tab-btn').forEach(btn => {
         btn.onclick = () => {
             const tabName = btn.getAttribute('data-tab');
             switchSettingsTab(tabName);
         };
     });
 
-    const drawNameInput = document.getElementById('input-draw-name');
+    const drawNameInput = getDom('#input-draw-name');
     if (drawNameInput) {
         drawNameInput.onkeydown = (e) => {
             if (e.key === 'Enter') {
-                const btn = document.getElementById('btn-save-image-settings');
+                const btn = getDom('#btn-save-image-settings');
                 if (btn) btn.click();
                 drawNameInput.blur();
             }
         };
     }
 
-    const btnSaveImageSettings = document.getElementById('btn-save-image-settings');
+    const btnSaveImageSettings = getDom('#btn-save-image-settings');
     if (btnSaveImageSettings) {
         btnSaveImageSettings.onclick = () => {
-            const nameInput = document.getElementById('input-draw-name');
-            const widthInput = document.getElementById('input-canvas-width');
-            const heightInput = document.getElementById('input-canvas-height');
-            
+            const nameInput = getDom('#input-draw-name');
+            const widthInput = getDom('#input-canvas-width');
+            const heightInput = getDom('#input-canvas-height');
+
             let changed = false;
 
             if (nameInput && nameInput.value.trim() !== '') {
@@ -426,12 +418,12 @@ function initEvents() {
         };
     }
 
-    document.getElementById('btn-add-layer').onclick = () => {
+    getDom('#btn-add-layer').onclick = () => {
         addLayer();
     }; /* btn-add-layer.onclick */
 
     // 検索入力イベントハンドラ
-    const searchInput = document.getElementById('search-input');
+    const searchInput = getDom('#search-input');
     if (searchInput) {
         searchInput.oninput = () => {
             performSearch(searchInput.value);
@@ -468,7 +460,7 @@ function initEvents() {
     }
 
     // コマンド入力イベントハンドラ
-    const commandInput = document.getElementById('command-input');
+    const commandInput = getDom('#command-input');
     if (commandInput) {
         commandInput.onkeydown = (e) => {
             if (e.key === 'Enter') {
@@ -488,15 +480,8 @@ function initEvents() {
         };
     }
 
-    // ミニマップホバー判定の登録
-    if (minimapCanvas) {
-        minimapCanvas.addEventListener('mouseenter', () => {
-            state.input.isHoveringMinimap = true;
-        });
-        minimapCanvas.addEventListener('mouseleave', () => {
-            state.input.isHoveringMinimap = false;
-        });
-    }
+    if (svg) registerHoverListener(svg);
+    if (minimapCanvas) registerHoverListener(minimapCanvas);
 } /* initEvents */
 
 /**
@@ -518,7 +503,7 @@ function getModifierState(rawEvent) {
 
 // 円の追加
 function handleAddCircleStart(ctx) {
-    addShapeAt('circle', state.input.pointer.x, state.input.pointer.y);
+    addShapeAt('circle', state.input.pointerOnSVG.x, state.input.pointerOnSVG.y);
 }
 
 // Wrap（接続ベジェ）の生成
@@ -610,7 +595,7 @@ function handlePaste(ctx) {
     state.clipboard.shapes.forEach(shape => {
         const newShapeId = generateId('s');
         shapeIdMap[shape.id] = newShapeId;
-        
+
         if (shape.bezierIds) {
             shape.bezierIds.forEach(bid => {
                 if (!bezierIdMap[bid]) {
@@ -658,7 +643,7 @@ function handlePaste(ctx) {
         state.shapes[newShapeId] = shape;
         activeLayer.childIds.push(newShapeId);
         newShapeIds.push(newShapeId);
-        
+
         markShapeDirty(newShapeId);
     });
 
@@ -763,17 +748,17 @@ function handleToggleThicknessEdit(ctx) {
         if (state.thicknessEdit.active) {
             state.thicknessEdit.targetT = 0.0;
             state.thicknessEdit.editIndex = -1;
-            const guide = document.getElementById('thickness-guide');
+            const guide = getDom('#thickness-guide');
             if (guide) guide.classList.remove('hidden');
 
             // Ensure patternEdit is deactivated
             if (state.patternEdit.active) {
                 state.patternEdit.active = false;
-                const patternGuide = document.getElementById('pattern-guide');
+                const patternGuide = getDom('#pattern-guide');
                 if (patternGuide) patternGuide.classList.add('hidden');
             }
         } else {
-            const guide = document.getElementById('thickness-guide');
+            const guide = getDom('#thickness-guide');
             if (guide) guide.classList.add('hidden');
         }
         return { pushHistory: false, needsRender: true };
@@ -968,19 +953,18 @@ function handleTransformStart(ctx) {
             handleWSlideThicknessStart();
         }
     } else {
-        const modeMap = { m: 'move', s: 'scale', r: 'rotate', t: 't-slide', d: 'd-dist', z: 'zoom' };
+        const modeMap = { m: 'move', s: 'scale', r: 'rotate', t: 't-slide', d: 'd-dist' };
         desiredMode = modeMap[key] || null;
     }
 
     if (desiredMode && desiredMode !== state.interaction.mode) {
-        const hasTarget = desiredMode === 'zoom' ||
-            state.selectedShapeIds.length > 0 ||
+        const hasTarget = state.selectedShapeIds.length > 0 ||
             (state.focusedVertex && (desiredMode === 't-slide' || desiredMode === 'd-dist')) ||
             (state.thicknessEdit.active && (desiredMode === 't-slide-thickness' || desiredMode === 'w-slide-thickness' || desiredMode === 't-move-thickness')) ||
             (state.patternEdit.active && (desiredMode === 't-slide-pattern' || desiredMode === 't-move-pattern'));
         if (hasTarget) {
             state.dragInfo = {
-                start: { ...state.input.pointer },
+                start: { ...state.input.pointerOnSVG },
                 type: 'key-hold'
             };
         }
@@ -1008,7 +992,7 @@ function handleTransformEnd(ctx) {
             mappedMode = 'w-slide-thickness';
         }
     } else {
-        const modeMap = { m: 'move', s: 'scale', r: 'rotate', t: 't-slide', d: 'd-dist', z: 'zoom' };
+        const modeMap = { m: 'move', s: 'scale', r: 'rotate', t: 't-slide', d: 'd-dist' };
         mappedMode = modeMap[key];
     }
 
@@ -1026,7 +1010,7 @@ function handleTransformEnd(ctx) {
 // pointerdown 時の共通処理
 function handlePointerDownStart(ctx) {
     if (state.interaction.mode === null) {
-        const hit = findShapeAt(state.input.dragStart);
+        const hit = findShapeAt(state.input.dragStartOnSVG);
         state.lastHit = hit;
         if (hit) {
             if (!state.selectedShapeIds.includes(hit.shape.id)) {
@@ -1036,7 +1020,7 @@ function handlePointerDownStart(ctx) {
         }
     } else {
         state.dragInfo = {
-            start: { ...state.input.dragStart },
+            start: { ...state.input.dragStartOnSVG },
             type: 'drag'
         };
     }
@@ -1170,21 +1154,14 @@ function handleDDist(ctx) {
     }
 }
 
-// 変形処理: ズーム (メインキャンバス / ミニマップ)
-function handleZoom(ctx) {
-    const zoomFactor = 1 - ctx.dy * 0.01;
-
-    // MEMO: 将来対応として、ズーム操作中にマウスポインタを固定させたい場合は、pointerdownイベントなどのユーザーインタラクションのコールバック内でPointer Lock API (requestPointerLock) を呼び出して制御することを検討する。
-    if (state.input.isHoveringMinimap) {
-        // ミニマップのズーム
+function handleZoom() {
+    const zoomFactor = 1 - state.input.deltaY * 0.01;
+    if (state.input.hoverOn === 'minimap-canvas') {
         state.minimap.zoom = Math.max(0.1, Math.min(10, state.minimap.zoom * zoomFactor));
     } else {
-        // メインキャンバスのズーム (ポインタ座標を中心にズーム)
         const oldZoom = state.zoom;
         state.zoom = Math.max(0.1, Math.min(20, state.zoom * zoomFactor));
-
-        // ポインタ座標 (キャンバス座標系)
-        const p = state.input.pointer;
+        const p = getMainCanvasSVGPoint();
         state.pan.x += p.x * (oldZoom - state.zoom);
         state.pan.y += p.y * (oldZoom - state.zoom);
     }
@@ -1275,10 +1252,6 @@ const keyHandlers = {
         d: {
             keydown: { f: handleTransformStart, needsRender: true }, // 接線距離d調整開始
             keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 接線距離d調整終了
-        },
-        z: {
-            keydown: { f: handleTransformStart, needsRender: true }, // ズーム開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // ズーム終了
         }
     },
     shift: {
@@ -1311,8 +1284,10 @@ const keyHandlers = {
 
 // モードごとのポインタ移動イベントハンドラ定義
 const modeHandlers = {
+    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
     move: {
         pointermove: { f: handleMove, needsRender: true }
+        //// f: () => updateByMouseDelta(state.selectedShape, ['x', 'y']),  のように修正予定。後続の handleScale , handleRotate も同様に修正したいが、複数 shape をまとめて変形する場合にもうひと工夫必要か。→ MDMath.transformCircle を実装しておいたので、これを使う方向で検討を進める。
     },
     scale: {
         pointermove: { f: handleScale, needsRender: true }
@@ -1320,21 +1295,21 @@ const modeHandlers = {
     rotate: {
         pointermove: { f: handleRotate, needsRender: true }
     },
+    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
     't-slide': {
         pointermove: { f: handleTSlide, needsRender: true }
     },
     'd-dist': {
         pointermove: { f: handleDDist, needsRender: true }
     },
-    zoom: {
-        pointermove: { f: handleZoom, needsRender: true }
-    },
+    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
     't-slide-thickness': {
         pointermove: { f: handleTSlideThickness, needsRender: true }
     },
     'w-slide-thickness': {
         pointermove: { f: handleWSlideThickness, needsRender: true }
     },
+    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
     't-move-thickness': {
         pointermove: { f: handleTMoveThickness, needsRender: true }
     },
@@ -1346,12 +1321,50 @@ const modeHandlers = {
     }
 };
 
+//// 検討中の構造。keyHandlers と modeHandlers を統合するイメージ。
+const interactionMap = {
+    view_canvas: { // キャンバスビューで。
+        pointermove_while_key_press: {
+            //// mキーによる移動、rキーによる回転...
+            m: {},
+            r: {},
+            // :
+            // :
+            // :
+        },
+        key_down: {
+            //// cキーによる円作成 ... 
+            c: {},
+        },
+        pointerdown: {
+            //// shapeの選択....
+        },
+        shift_pointerdown: {
+            //// shapeの追加選択....
+        },
+        ctrl_wheel: {
+            //// ズーム
+            //// いったんズーム機能を、zキーからwheelへ移設した。他の機能は徐々に移行する予定。
+            f: handleZoom, needsRender: true,
+        }
+    },
+    view_gallery: { // ギャラリービューで。
+        click_selector: {
+            ['#btn-new-draw']: { f: () => toggleClassDom('#new-draw-menu', 'hidden') },
+            ['#btn-new-canvas']: { f: () => startNewDrawing('canvas') },
+            ['#btn-new-pattern']: { f: () => startNewDrawing('pattern') },
+            ['#btn-new-import']: { f: () => importImageFile() },
+            ['body']: { f: () => addClassDom('#new-draw-menu', 'hidden') },
+        }
+    }
+};
+
 async function handleInputUpdate(event, detail, rawEvent) {
     let needsRender = false;
     let shouldPushHistory = false;
 
     const modifier = getModifierState(rawEvent);
-    const ctx = {
+    const ctx = { //// stateとは別にctxにする意味薄い気がするな。
         event,
         detail,
         rawEvent,
@@ -1393,7 +1406,7 @@ async function handleInputUpdate(event, detail, rawEvent) {
 
         else if (event === 'pointermove') {
             if (state.dragInfo) {
-                const pt = state.input.pointer;
+                const pt = state.input.pointerOnSVG;
                 ctx.dx = pt.x - state.dragInfo.start.x;
                 ctx.dy = pt.y - state.dragInfo.start.y;
 
@@ -1422,10 +1435,73 @@ async function handleInputUpdate(event, detail, rawEvent) {
     if (needsRender) {
         renderCanvas();
     }
+
 } /* handleInputUpdate */
 
+//// いったんズーム機能をここに移動。handleInputUpdateから徐々にhandleInputUpdate_testへ移植予定。
+async function handleInputUpdate_test(event) {
+    const viewKey = `view_${state.view}`;
+
+    let interaction;
+    if (event.type === 'wheel' && state.input.modifier === 'ctrl') {
+        interaction = interactionMap[viewKey]?.ctrl_wheel;
+    }
+
+    const clickMap = interactionMap[viewKey]?.click_selector;
+    if (event.type === 'click' && clickMap) {
+        for (const selector in clickMap) {
+            const matchedEl = event.target.closest(selector);
+            if (matchedEl) {
+                interaction = clickMap[selector]; // interaction.f が function でなければコンソールでエラーを確認する想定で、この階層ではエラートラップしない。
+                event.preventDefault();
+                event.stopPropagation();
+                break;
+            }
+        }
+    }
+
+    if (interaction && typeof interaction.f === 'function') {
+        await interaction.f();
+    }
+    if (interaction?.pushHistory) {
+        pushHistory();
+    }
+    if (interaction?.needsRender) {
+        renderCanvas();
+    }
+}
+
+/*
+async function handleInputUpdate_test(e) {
+    const viewKey = `view_${state.view}`; // 例: 'view_gallery'
+    const clickMap = interactionMap[viewKey]?.click_selector;
+
+    if (e.type === 'click' && clickMap) {
+        // マップ内のすべてのセレクタを走査
+        for (const selector in clickMap) {
+            // closest を使うことで、ボタン内のアイコン（<i> や <span>）がクリックされた場合も
+            // 親のボタン要素を正しく検出できます。
+            const matchedEl = e.target.closest(selector);
+            if (matchedEl) {
+                const interaction = clickMap[selector];
+                if (interaction && typeof interaction.f === 'function') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    await interaction.f(e, matchedEl); // ハンドラを実行
+
+                    if (interaction.pushHistory) pushHistory();
+                    if (interaction.needsRender) renderCanvas();
+                }
+                break; // マッチしたらループを抜ける
+            }
+        }
+    }
+}
+*/
+
 function toggleHelpModal() {
-    const panel = document.getElementById('settings-panel');
+    const panel = getDom('#settings-panel');
     if (!panel) return;
     const isCollapsed = panel.classList.contains('collapsed');
 
@@ -1433,7 +1509,7 @@ function toggleHelpModal() {
         panel.classList.remove('collapsed');
         switchSettingsTab('help');
     } else {
-        const activeTab = panel.querySelector('.settings-tab-btn.active');
+        const activeTab = getDomOf(panel, '.settings-tab-btn.active');
         if (activeTab && activeTab.getAttribute('data-tab') !== 'help') {
             switchSettingsTab('help');
         } else {
@@ -1443,8 +1519,8 @@ function toggleHelpModal() {
 } /* toggleHelpModal */
 
 function switchSettingsTab(tabName) {
-    const tabs = document.querySelectorAll('.settings-tab-btn');
-    const contents = document.querySelectorAll('.settings-tab-content');
+    const tabs = getDoms('.settings-tab-btn');
+    const contents = getDoms('.settings-tab-content');
 
     tabs.forEach(btn => {
         if (btn.getAttribute('data-tab') === tabName) {
@@ -2050,7 +2126,7 @@ const shapeRenderCaches = {}; // shapeId -> { canvas, ctx, isDirty, x, y, w, h }
 
 function getShapeCache(shapeId) {
     if (!shapeRenderCaches[shapeId]) {
-        const canvas = document.createElement('canvas');
+        const canvas = newElm('canvas');
         const ctx = canvas.getContext('2d');
         shapeRenderCaches[shapeId] = { canvas, ctx, isDirty: true, x: 0, y: 0, w: 0, h: 0 };
     }
@@ -2083,13 +2159,13 @@ function getShapeRenderBounds(shapeId) {
     if (shape.strokeWidthData && shape.strokeWidthData.length > 0) {
         maxW = Math.max(...shape.strokeWidthData.map(d => d.w));
     }
-    
+
     // 余白（最大の太さの半分 + 安全パディング 20px）
     const padding = (maxW / 2) + 20;
 
     const x = Math.floor(minX - padding);
     const y = Math.floor(minY - padding);
-    
+
     // 最小サイズは 1px にクリップ（ゼロサイズによる canvas エラー防止）
     const w = Math.max(1, Math.ceil(maxX + padding) - x);
     const h = Math.max(1, Math.ceil(maxY + padding) - y);
@@ -2114,10 +2190,11 @@ function renderCanvas() {
     const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     currentRenderCoonsCount = 0;
 
-    const svg = document.getElementById('guide-svg');
-    if (!svg) return;
-    svg.innerHTML = `<g id="viewport" transform="translate(${state.pan.x}, ${state.pan.y}) scale(${state.zoom}) rotate(${state.rotation})"></g>`;
-    const viewport = document.getElementById('viewport');
+    const viewport = getDom('#viewport');
+    if (viewport) {
+        viewport.setAttribute('transform', `translate(${state.pan.x}, ${state.pan.y}) scale(${state.zoom}) rotate(${state.rotation})`);
+        viewport.innerHTML = '';
+    }
 
     // キャンバス全体の境界線を viewport の背景として自動描画
     const borderRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -2150,9 +2227,9 @@ function renderCanvas() {
     }
 
     // under-canvas / active-canvas / over-canvas にそれぞれ対応するオフスクリーンから 1:1 で転写
-    const underCanvas = document.getElementById('under-canvas');
-    const activeCanvas = document.getElementById('active-canvas');
-    const overCanvas = document.getElementById('over-canvas');
+    const underCanvas = getDom('#under-canvas');
+    const activeCanvas = getDom('#active-canvas');
+    const overCanvas = getDom('#over-canvas');
 
     drawOffscreenToOnscreen(underCanvas, state.canvas.underOffscreen);
     drawOffscreenToOnscreen(activeCanvas, state.canvas.activeOffscreen);
@@ -2338,7 +2415,7 @@ function handleTogglePatternEdit(ctx) {
             // Ensure thicknessEdit is deactivated
             if (state.thicknessEdit.active) {
                 state.thicknessEdit.active = false;
-                const thicknessGuide = document.getElementById('thickness-guide');
+                const thicknessGuide = getDom('#thickness-guide');
                 if (thicknessGuide) thicknessGuide.classList.add('hidden');
             }
 
@@ -2362,10 +2439,10 @@ function handleTogglePatternEdit(ctx) {
             });
             state.patternEdit.selectedCorner = closestCorner;
 
-            const guide = document.getElementById('pattern-guide');
+            const guide = getDom('#pattern-guide');
             if (guide) guide.classList.remove('hidden');
         } else {
-            const guide = document.getElementById('pattern-guide');
+            const guide = getDom('#pattern-guide');
             if (guide) guide.classList.add('hidden');
         }
         return { pushHistory: false, needsRender: true };
@@ -2445,20 +2522,20 @@ function handleTMovePattern(ctx) {
 // コマンド処理
 function openCommandMode() {
     state.command.active = true;
-    const bar = document.getElementById('command-bar');
+    const bar = getDom('#command-bar');
     if (!bar) return;
     bar.classList.remove('hidden');
-    const input = document.getElementById('command-input');
+    const input = getDom('#command-input');
     input.value = '';
     input.focus();
 }
 
 function closeCommandMode(confirm = true) {
     state.command.active = false;
-    const bar = document.getElementById('command-bar');
+    const bar = getDom('#command-bar');
     if (bar) bar.classList.add('hidden');
 
-    const input = document.getElementById('command-input');
+    const input = getDom('#command-input');
     if (input) {
         if (confirm) {
             executeCommand(input.value);
@@ -2468,7 +2545,7 @@ function closeCommandMode(confirm = true) {
 }
 
 function handleOpenCommand(ctx) {
-    if (document.activeElement && document.activeElement.tagName === 'INPUT') return { needsRender: false };
+    if (isFocusEditable()) return { needsRender: false }; //// ここも動的に needsRender を書き換える構造は避けたいところ。
     if (ctx.rawEvent) ctx.rawEvent.preventDefault();
     openCommandMode();
     return { needsRender: false };
@@ -2586,7 +2663,7 @@ function rasterizeInactiveLayers() {
 }
 
 function renderMinimap() {
-    const canvas = document.getElementById('minimap-canvas');
+    const canvas = getDom('#minimap-canvas');
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
@@ -2768,14 +2845,6 @@ function renderGuides(id, container) {
     container.appendChild(g);
 }
 
-function getSVGPoint(e, element) {
-    const svg = document.getElementById('guide-svg');
-    const el = element || svg;
-    const p = svg.createSVGPoint();
-    p.x = e.clientX;
-    p.y = e.clientY;
-    return p.matrixTransform(el.getScreenCTM().inverse());
-} /* getSVGPoint */
 
 function initDB() {
     const request = indexedDB.open('morph-draw-db', 1);
@@ -2790,8 +2859,8 @@ function initDB() {
 
 function switchView(viewId) {
     state.view = viewId;
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    document.getElementById(`view-${viewId}`).classList.add('active');
+    getDoms('.view').forEach(v => v.classList.remove('active'));
+    getDom(`#view-${viewId}`).classList.add('active');
 } /* switchView */
 
 async function saveDrawing() {
@@ -2804,9 +2873,7 @@ async function saveDrawing() {
     const thumbW = Math.round(baseW * scale);
     const thumbH = Math.round(baseH * scale);
 
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = thumbW;
-    tempCanvas.height = thumbH;
+    const tempCanvas = newElm('canvas', { width: thumbW, height: thumbH });
     const tempCtx = tempCanvas.getContext('2d');
     tempCtx.clearRect(0, 0, thumbW, thumbH);
 
@@ -2873,9 +2940,9 @@ function loadGallery() {
 let activeGalleryUrls = [];
 
 function renderGalleryGrid(items) {
-    const listCanvas = document.getElementById('gallery-list-canvas');
-    const listPattern = document.getElementById('gallery-list-pattern');
-    const listImport = document.getElementById('gallery-list-import');
+    const listCanvas = getDom('#gallery-list-canvas');
+    const listPattern = getDom('#gallery-list-pattern');
+    const listImport = getDom('#gallery-list-import');
 
     // 古いオブジェクトURLを解放してメモリリークを防ぐ
     activeGalleryUrls.forEach(url => URL.revokeObjectURL(url));
@@ -2886,8 +2953,7 @@ function renderGalleryGrid(items) {
     if (listImport) listImport.innerHTML = '';
 
     items.sort((a, b) => b.updatedAt - a.updatedAt).forEach(item => {
-        const card = document.createElement('div');
-        card.className = 'gallery-card';
+        const card = newElm('div', { className: 'gallery-card' });
 
         let imgSrc = '';
         if (item.preview) {
@@ -2920,7 +2986,7 @@ function renderGalleryGrid(items) {
             card.onclick = () => openDrawing(item.id);
         }
 
-        const deleteBtn = card.querySelector('.btn-card-delete');
+        const deleteBtn = getDomOf(card, '.btn-card-delete');
         if (deleteBtn) {
             deleteBtn.onclick = (e) => deleteDrawing(item.id, e);
         }
@@ -2953,7 +3019,7 @@ function openDrawing(id) {
         state.currentDrawId = data.id;
         state.drawingType = data.type || 'canvas';
         state.drawingName = data.name || `Drawing ${data.id}`;
-        const nameInput = document.getElementById('input-draw-name');
+        const nameInput = getDom('#input-draw-name');
         if (nameInput) {
             nameInput.value = state.drawingName;
         }
@@ -2973,8 +3039,8 @@ function openDrawing(id) {
             state.canvas.width = 800;
             state.canvas.height = 600;
         }
-        const widthInput = document.getElementById('input-canvas-width');
-        const heightInput = document.getElementById('input-canvas-height');
+        const widthInput = getDom('#input-canvas-width');
+        const heightInput = getDom('#input-canvas-height');
         if (widthInput && heightInput) {
             widthInput.value = state.canvas.width;
             heightInput.value = state.canvas.height;
@@ -3034,15 +3100,13 @@ function resizeImageToBlob(file, maxWidth, maxHeight) {
         reader.onload = (event) => {
             const img = new Image();
             img.onload = () => {
-                const tempCanvas = document.createElement('canvas');
                 let w = img.width;
                 let h = img.height;
                 const scale = Math.min(maxWidth / w, maxHeight / h);
                 const thumbW = Math.round(w * scale);
                 const thumbH = Math.round(h * scale);
 
-                tempCanvas.width = thumbW;
-                tempCanvas.height = thumbH;
+                const tempCanvas = newElm('canvas', { width: thumbW, height: thumbH });
                 const ctx = tempCanvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, thumbW, thumbH);
                 tempCanvas.toBlob((blob) => {
@@ -3058,9 +3122,8 @@ function resizeImageToBlob(file, maxWidth, maxHeight) {
 }
 
 function importImageFile() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/png, image/jpeg';
+    addClassDom('#new-draw-menu', 'hidden');
+    const input = newElm('input', { type: 'file', accept: 'image/png, image/jpeg' });
     input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -3104,6 +3167,7 @@ function importImageFile() {
 }
 
 function startNewDrawing(type = 'canvas') {
+    addClassDom('#new-draw-menu', 'hidden');
     state.maxDrawingId++;
     state.currentDrawId = `d${state.maxDrawingId}`;
     state.drawingType = type;
@@ -3112,7 +3176,7 @@ function startNewDrawing(type = 'canvas') {
     } else {
         state.drawingName = `Drawing ${state.currentDrawId}`;
     }
-    const nameInput = document.getElementById('input-draw-name');
+    const nameInput = getDom('#input-draw-name');
     if (nameInput) {
         nameInput.value = state.drawingName;
     }
@@ -3131,8 +3195,8 @@ function startNewDrawing(type = 'canvas') {
     // キャンバスサイズの初期化と UI 同期
     state.canvas.width = 800;
     state.canvas.height = 600;
-    const widthInput = document.getElementById('input-canvas-width');
-    const heightInput = document.getElementById('input-canvas-height');
+    const widthInput = getDom('#input-canvas-width');
+    const heightInput = getDom('#input-canvas-height');
     if (widthInput && heightInput) {
         widthInput.value = 800;
         heightInput.value = 600;
@@ -3214,7 +3278,7 @@ function deleteLayer(layerId) {
 } /* deleteLayer */
 
 function renderLayerList() {
-    const list = document.getElementById('layer-list');
+    const list = getDom('#layer-list');
     if (!list) return;
     list.innerHTML = '';
 
@@ -3222,8 +3286,9 @@ function renderLayerList() {
         const layer = state.shapes[layerId];
         if (!layer || layer.type !== 'layer') return;
 
-        const item = document.createElement('div');
-        item.className = `layer-item${state.selectedLayerId === layerId ? ' active' : ''}${layer.visible ? '' : ' hidden-layer'}`;
+        const item = newElm('div', {
+            className: `layer-item${state.selectedLayerId === layerId ? ' active' : ''}${layer.visible ? '' : ' hidden-layer'}`
+        });
 
         item.innerHTML = `
             <div class="layer-info">
@@ -3246,7 +3311,7 @@ function renderLayerList() {
         };
 
         // 表示・非表示トグル
-        item.querySelector('.layer-visibility-btn').onclick = (e) => {
+        getDomOf(item, '.layer-visibility-btn').onclick = (e) => {
             e.stopPropagation();
             layer.visible = !layer.visible;
             rasterizeInactiveLayers();
@@ -3255,7 +3320,7 @@ function renderLayerList() {
         };
 
         // 名前編集
-        const input = item.querySelector('.layer-name-input');
+        const input = getDomOf(item, '.layer-name-input');
         input.onblur = () => {
             if (input.value.trim() !== '') {
                 layer.name = input.value.trim();
@@ -3269,7 +3334,7 @@ function renderLayerList() {
         };
 
         // 削除
-        item.querySelector('.btn-layer-delete').onclick = (e) => {
+        getDomOf(item, '.btn-layer-delete').onclick = (e) => {
             e.stopPropagation();
             deleteLayer(layerId);
         };
@@ -3280,10 +3345,10 @@ function renderLayerList() {
 
 function openSearchMode() {
     state.search.active = true;
-    const bar = document.getElementById('search-bar');
+    const bar = getDom('#search-bar');
     if (!bar) return;
     bar.classList.remove('hidden');
-    const input = document.getElementById('search-input');
+    const input = getDom('#search-input');
     input.value = '';
     input.focus();
     state.search.results = [];
@@ -3292,10 +3357,10 @@ function openSearchMode() {
 
 function closeSearchMode(confirm = true) {
     state.search.active = false;
-    const bar = document.getElementById('search-bar');
+    const bar = getDom('#search-bar');
     if (bar) bar.classList.add('hidden');
 
-    const input = document.getElementById('search-input');
+    const input = getDom('#search-input');
     if (input) input.blur();
 }
 

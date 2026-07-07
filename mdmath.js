@@ -174,5 +174,16 @@ const MDMath = {
         }
 
         return { p, nx, ny };
+    },
+
+    transformCircle: (obj, x0, y0, a, r) => {
+        const cos = Math.cos(a);
+        const sin = Math.sin(a);
+        const dx = obj.x - x0;
+        const dy = obj.y - y0;
+        obj.x = x0 + (dx * cos - dy * sin) * r;
+        obj.y = y0 + (dx * sin + dy * cos) * r;
+        if (obj.a !== undefined) obj.a += a;
+        if (obj.r !== undefined) obj.r *= r;
     }
 };
