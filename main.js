@@ -1,6 +1,3 @@
-/**
- * MorphDraw - アプリケーション状態
- */
 const state = {
     view: 'gallery',
     currentDrawId: null,
@@ -89,6 +86,197 @@ const state = {
         state.drawingType = 'canvas';
     }
 }; /* state */
+
+// キーボードイベントハンドラ定義
+const keyHandlers = {
+    no_mod: {
+        x: {
+            keydown: [
+                {
+                    cond: () => state.thicknessEdit.active,
+                    f: handleDeleteThicknessPoint, // 太さ編集：データ点削除
+                    pushHistory: true,
+                    needsRender: true
+                },
+                {
+                    cond: () => {
+                        if (!state.focusedVertex) return false;
+                        const shape = state.shapes[state.focusedVertex.shapeId];
+                        return shape && shape.bezierIds && shape.bezierIds.length > 3;
+                    },
+                    f: deleteSelectedVertex, // 頂点削除
+                    pushHistory: true,
+                    needsRender: true
+                },
+                {
+                    cond: () => state.selectedShapeIds.length > 0,
+                    f: deleteSelectedShapes, // 図形削除
+                    pushHistory: true,
+                    needsRender: true
+                }
+            ]
+        },
+        c: { keydown: { f: handleAddCircleStart, needsRender: true } }, // 円生成
+        w: {
+            keydown: [
+                {
+                    cond: () => state.thicknessEdit.active,
+                    f: handleTransformStart, // 太さ編集：ドラッグ変形開始
+                    needsRender: true
+                },
+                {
+                    cond: () => !state.thicknessEdit.active,
+                    f: handleCreateWrap, // Wrap生成
+                    pushHistory: true,
+                    needsRender: true
+                }
+            ],
+            keyup: [
+                {
+                    cond: () => state.thicknessEdit.active,
+                    f: handleTransformEnd, // 太さ編集：ドラッグ変形終了
+                    pushHistory: true,
+                    needsRender: true
+                }
+            ]
+        },
+        '?': { keydown: { f: toggleHelpModal } }, // ヘルプ表示トグル
+        q: { keydown: { f: handleQuitToGallery } }, // 保存してギャラリーに戻る
+        '/': { keydown: { f: handleOpenSearch } }, // 検索モード開始
+        ':': { keydown: { f: handleOpenCommand } }, // コマンドモード開始
+        n: { keydown: { f: handleSearchNext, needsRender: true } }, // 検索結果・次
+        N: { keydown: { f: handleSearchPrev, needsRender: true } }, // 検索結果・前
+        ArrowLeft: { keydown: { f: handleFocusVertexPrev, needsRender: true } }, // 頂点フォーカス前へ
+        ArrowRight: { keydown: { f: handleFocusVertexNext, needsRender: true } }, // 頂点フォーカス次へ
+        Escape: { keydown: { f: handleClearVertexFocus, needsRender: true } }, // 頂点フォーカス解除
+        a: { keydown: { f: handleToggleAnchor } }, // アンカートグル / 頂点追加待機
+        Enter: { keydown: { f: handleEnterAction } }, // 頂点割り込み接続決定
+
+        m: {
+            keydown: { f: handleTransformStart, needsRender: true }, // 移動開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 移動終了
+        },
+        s: {
+            keydown: { f: handleTransformStart, needsRender: true }, // 拡大縮小開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 拡大縮小終了
+        },
+        r: {
+            keydown: { f: handleTransformStart, needsRender: true }, // 回転開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 回転終了
+        },
+        t: {
+            keydown: { f: handleTransformStart, needsRender: true }, // t値（または太さ編集t位置）スライド開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // t値（または太さ編集t位置）スライド終了
+        },
+        d: {
+            keydown: { f: handleTransformStart, needsRender: true }, // 接線距離d調整開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 接線距離d調整終了
+        }
+    },
+    shift: {
+        W: { keydown: { f: handleToggleThicknessEdit, needsRender: true } }, // 太さ編集モードトグル
+        w: { keydown: { f: handleToggleThicknessEdit, needsRender: true } }, // 太さ編集モードトグル
+        S: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } }, // 輪郭トグル
+        s: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } }, // 輪郭トグル
+        F: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } }, // 塗りトグル
+        f: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } }, // 塗りトグル
+        P: { keydown: { f: handleTogglePatternEdit, needsRender: true } }, // パターン編集モードトグル
+        p: { keydown: { f: handleTogglePatternEdit, needsRender: true } }, // パターン編集モードトグル
+        T: {
+            keydown: { f: handleTransformStart, needsRender: true }, // 最も近い太さデータt移動開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 最も近い太さデータt移動終了
+        },
+        t: {
+            keydown: { f: handleTransformStart, needsRender: true }, // 最も近い太さデータt移動開始
+            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 最も近い太さデータt移動終了
+        }
+    },
+    ctrl: {
+        z: { keydown: { f: handleUndoAction, needsRender: true } }, // Undo
+        c: { keydown: { f: handleCopy } }, // Copy
+        v: { keydown: { f: handlePaste } } // Paste
+    },
+    ctrl_shift: {
+        z: { keydown: { f: handleRedoAction, needsRender: true } } // Redo
+    }
+};
+
+// モードごとのポインタ移動イベントハンドラ定義
+const modeHandlers = {
+    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
+    move: {
+        pointermove: { f: handleMove, needsRender: true }
+        //// f: () => updateByMouseDelta(state.selectedShape, ['x', 'y']),  のように修正予定。後続の handleScale , handleRotate も同様に修正したいが、複数 shape をまとめて変形する場合にもうひと工夫必要か。→ MDMath.transformCircle を実装しておいたので、これを使う方向で検討を進める。
+    },
+    scale: {
+        pointermove: { f: handleScale, needsRender: true }
+    },
+    rotate: {
+        pointermove: { f: handleRotate, needsRender: true }
+    },
+    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
+    't-slide': {
+        pointermove: { f: handleTSlide, needsRender: true }
+    },
+    'd-dist': {
+        pointermove: { f: handleDDist, needsRender: true }
+    },
+    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
+    't-slide-thickness': {
+        pointermove: { f: handleTSlideThickness, needsRender: true }
+    },
+    'w-slide-thickness': {
+        pointermove: { f: handleWSlideThickness, needsRender: true }
+    },
+    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
+    't-move-thickness': {
+        pointermove: { f: handleTMoveThickness, needsRender: true }
+    },
+    't-slide-pattern': {
+        pointermove: { f: handleTSlidePattern, needsRender: true }
+    },
+    't-move-pattern': {
+        pointermove: { f: handleTMovePattern, needsRender: true }
+    }
+};
+
+//// 検討中の構造。keyHandlers と modeHandlers を統合するイメージ。
+const interactionMap = {
+    view_canvas: { // キャンバスビューで。
+        pointermove_while_key_press: {
+            //// mキーによる移動、rキーによる回転...
+            m: {},
+            r: {},
+            // :
+            // :
+            // :
+        },
+        key_down: {
+            //// cキーによる円作成 ... 
+            c: {},
+        },
+        pointerdown: {
+            //// shapeの選択....
+        },
+        shift_pointerdown: {
+            //// shapeの追加選択....
+        },
+        ctrl_wheel: {
+            //// ズーム
+            //// いったんズーム機能を、zキーからwheelへ移設した。他の機能は徐々に移行する予定。
+            f: handleZoom, needsRender: true,
+        }
+    },
+    view_gallery: { // ギャラリービューで。
+        click_selector: {
+            ['#btn-new-draw']: { f: () => toggleClassDom('#new-draw-menu', 'hidden') },
+            ['#btn-new-canvas']: { f: () => startNewDrawing('canvas') },
+            ['#btn-new-pattern']: { f: () => startNewDrawing('pattern') },
+            ['#btn-new-import']: { f: () => importImageFile() },
+            ['body']: { f: () => addClassDom('#new-draw-menu', 'hidden') },
+        }
+    }
+};
 
 let db; /* IndexedDB インスタンス */
 
@@ -1167,198 +1355,6 @@ function handleZoom() {
     }
 }
 
-// キーボードイベントハンドラ定義
-// MEMO この構造(condで実行条件を判定してからfを実行することで、事前に pushHistory, needsRender を決定できる)は気に入っているので、今後ハンドラを追加・修正する際はなるべくこの構造に寄せること。
-const keyHandlers = {
-    no_mod: {
-        x: {
-            keydown: [
-                {
-                    cond: () => state.thicknessEdit.active,
-                    f: handleDeleteThicknessPoint, // 太さ編集：データ点削除
-                    pushHistory: true,
-                    needsRender: true
-                },
-                {
-                    cond: () => {
-                        if (!state.focusedVertex) return false;
-                        const shape = state.shapes[state.focusedVertex.shapeId];
-                        return shape && shape.bezierIds && shape.bezierIds.length > 3;
-                    },
-                    f: deleteSelectedVertex, // 頂点削除
-                    pushHistory: true,
-                    needsRender: true
-                },
-                {
-                    cond: () => state.selectedShapeIds.length > 0,
-                    f: deleteSelectedShapes, // 図形削除
-                    pushHistory: true,
-                    needsRender: true
-                }
-            ]
-        },
-        c: { keydown: { f: handleAddCircleStart, needsRender: true } }, // 円生成
-        w: {
-            keydown: [
-                {
-                    cond: () => state.thicknessEdit.active,
-                    f: handleTransformStart, // 太さ編集：ドラッグ変形開始
-                    needsRender: true
-                },
-                {
-                    cond: () => !state.thicknessEdit.active,
-                    f: handleCreateWrap, // Wrap生成
-                    pushHistory: true,
-                    needsRender: true
-                }
-            ],
-            keyup: [
-                {
-                    cond: () => state.thicknessEdit.active,
-                    f: handleTransformEnd, // 太さ編集：ドラッグ変形終了
-                    pushHistory: true,
-                    needsRender: true
-                }
-            ]
-        },
-        '?': { keydown: { f: toggleHelpModal } }, // ヘルプ表示トグル
-        q: { keydown: { f: handleQuitToGallery } }, // 保存してギャラリーに戻る
-        '/': { keydown: { f: handleOpenSearch } }, // 検索モード開始
-        ':': { keydown: { f: handleOpenCommand } }, // コマンドモード開始
-        n: { keydown: { f: handleSearchNext, needsRender: true } }, // 検索結果・次
-        N: { keydown: { f: handleSearchPrev, needsRender: true } }, // 検索結果・前
-        ArrowLeft: { keydown: { f: handleFocusVertexPrev, needsRender: true } }, // 頂点フォーカス前へ
-        ArrowRight: { keydown: { f: handleFocusVertexNext, needsRender: true } }, // 頂点フォーカス次へ
-        Escape: { keydown: { f: handleClearVertexFocus, needsRender: true } }, // 頂点フォーカス解除
-        a: { keydown: { f: handleToggleAnchor } }, // アンカートグル / 頂点追加待機
-        Enter: { keydown: { f: handleEnterAction } }, // 頂点割り込み接続決定
-
-        m: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 移動開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 移動終了
-        },
-        s: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 拡大縮小開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 拡大縮小終了
-        },
-        r: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 回転開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 回転終了
-        },
-        t: {
-            keydown: { f: handleTransformStart, needsRender: true }, // t値（または太さ編集t位置）スライド開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // t値（または太さ編集t位置）スライド終了
-        },
-        d: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 接線距離d調整開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 接線距離d調整終了
-        }
-    },
-    shift: {
-        W: { keydown: { f: handleToggleThicknessEdit, needsRender: true } }, // 太さ編集モードトグル
-        w: { keydown: { f: handleToggleThicknessEdit, needsRender: true } }, // 太さ編集モードトグル
-        S: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } }, // 輪郭トグル
-        s: { keydown: { f: handleToggleOutline, pushHistory: true, needsRender: true } }, // 輪郭トグル
-        F: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } }, // 塗りトグル
-        f: { keydown: { f: handleToggleFillEnabled, pushHistory: true, needsRender: true } }, // 塗りトグル
-        P: { keydown: { f: handleTogglePatternEdit, needsRender: true } }, // パターン編集モードトグル
-        p: { keydown: { f: handleTogglePatternEdit, needsRender: true } }, // パターン編集モードトグル
-        T: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 最も近い太さデータt移動開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 最も近い太さデータt移動終了
-        },
-        t: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 最も近い太さデータt移動開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 最も近い太さデータt移動終了
-        }
-    },
-    ctrl: {
-        z: { keydown: { f: handleUndoAction, needsRender: true } }, // Undo
-        c: { keydown: { f: handleCopy } }, // Copy
-        v: { keydown: { f: handlePaste } } // Paste
-    },
-    ctrl_shift: {
-        z: { keydown: { f: handleRedoAction, needsRender: true } } // Redo
-    }
-};
-
-// モードごとのポインタ移動イベントハンドラ定義
-const modeHandlers = {
-    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
-    move: {
-        pointermove: { f: handleMove, needsRender: true }
-        //// f: () => updateByMouseDelta(state.selectedShape, ['x', 'y']),  のように修正予定。後続の handleScale , handleRotate も同様に修正したいが、複数 shape をまとめて変形する場合にもうひと工夫必要か。→ MDMath.transformCircle を実装しておいたので、これを使う方向で検討を進める。
-    },
-    scale: {
-        pointermove: { f: handleScale, needsRender: true }
-    },
-    rotate: {
-        pointermove: { f: handleRotate, needsRender: true }
-    },
-    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
-    't-slide': {
-        pointermove: { f: handleTSlide, needsRender: true }
-    },
-    'd-dist': {
-        pointermove: { f: handleDDist, needsRender: true }
-    },
-    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
-    't-slide-thickness': {
-        pointermove: { f: handleTSlideThickness, needsRender: true }
-    },
-    'w-slide-thickness': {
-        pointermove: { f: handleWSlideThickness, needsRender: true }
-    },
-    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
-    't-move-thickness': {
-        pointermove: { f: handleTMoveThickness, needsRender: true }
-    },
-    't-slide-pattern': {
-        pointermove: { f: handleTSlidePattern, needsRender: true }
-    },
-    't-move-pattern': {
-        pointermove: { f: handleTMovePattern, needsRender: true }
-    }
-};
-
-//// 検討中の構造。keyHandlers と modeHandlers を統合するイメージ。
-const interactionMap = {
-    view_canvas: { // キャンバスビューで。
-        pointermove_while_key_press: {
-            //// mキーによる移動、rキーによる回転...
-            m: {},
-            r: {},
-            // :
-            // :
-            // :
-        },
-        key_down: {
-            //// cキーによる円作成 ... 
-            c: {},
-        },
-        pointerdown: {
-            //// shapeの選択....
-        },
-        shift_pointerdown: {
-            //// shapeの追加選択....
-        },
-        ctrl_wheel: {
-            //// ズーム
-            //// いったんズーム機能を、zキーからwheelへ移設した。他の機能は徐々に移行する予定。
-            f: handleZoom, needsRender: true,
-        }
-    },
-    view_gallery: { // ギャラリービューで。
-        click_selector: {
-            ['#btn-new-draw']: { f: () => toggleClassDom('#new-draw-menu', 'hidden') },
-            ['#btn-new-canvas']: { f: () => startNewDrawing('canvas') },
-            ['#btn-new-pattern']: { f: () => startNewDrawing('pattern') },
-            ['#btn-new-import']: { f: () => importImageFile() },
-            ['body']: { f: () => addClassDom('#new-draw-menu', 'hidden') },
-        }
-    }
-};
-
 async function handleInputUpdate(event, detail, rawEvent) {
     let needsRender = false;
     let shouldPushHistory = false;
@@ -1470,35 +1466,6 @@ async function handleInputUpdate_test(event) {
         renderCanvas();
     }
 }
-
-/*
-async function handleInputUpdate_test(e) {
-    const viewKey = `view_${state.view}`; // 例: 'view_gallery'
-    const clickMap = interactionMap[viewKey]?.click_selector;
-
-    if (e.type === 'click' && clickMap) {
-        // マップ内のすべてのセレクタを走査
-        for (const selector in clickMap) {
-            // closest を使うことで、ボタン内のアイコン（<i> や <span>）がクリックされた場合も
-            // 親のボタン要素を正しく検出できます。
-            const matchedEl = e.target.closest(selector);
-            if (matchedEl) {
-                const interaction = clickMap[selector];
-                if (interaction && typeof interaction.f === 'function') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    await interaction.f(e, matchedEl); // ハンドラを実行
-
-                    if (interaction.pushHistory) pushHistory();
-                    if (interaction.needsRender) renderCanvas();
-                }
-                break; // マッチしたらループを抜ける
-            }
-        }
-    }
-}
-*/
 
 function toggleHelpModal() {
     const panel = getDom('#settings-panel');
