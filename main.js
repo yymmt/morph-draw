@@ -1751,7 +1751,6 @@ function deleteVertex(wrapShapeId, vertexIdx) {
 /**
  * Bezier Math & Engine
  */
-
 function updateBezier(id) {
     const bez = state.beziers[id];
     if (!bez || !bez.generator) return;
@@ -1772,6 +1771,20 @@ function updateBezier(id) {
         } else {
             bez.controlPoints = generatorFunc(state, bez.generator.params);
         }
+        //// せっかく generatorFunc を切り出したが、 'arc' と else で 個別に呼び出しているのが少しもったいない。一方で、 MDMathはstateやshapeやbezierの構造に依存したくないので、stateやshapeやbezierからMDMathに渡すパラメータを構築するためにmain.js側にしかけを持たせている上記そのものは問題ない。if文でこのまま増やしていくかどうかだ。
+        //// 将来修正案: 
+        //// 案A: `main.js` 側に `resolveGeneratorParams[type](state, bez)` のようなマッピングオブジェクトを定義し、MDMathに渡すパラメータの抽出ロジックをジェネレータごとに分離して登録・呼び出す形にする。
+        ////      例: bez.controlPoints = generatorFunc(resolveGeneratorParams[bez.generator.type](state, bez));
+        //// 案B: 各 `bezier` の `generator` オブジェクトに、解決関数自体を持たせる（あるいは `state` 構築時に解決処理を注入する）。
+        ////      例: const params = bez.generator.resolve ? bez.generator.resolve(state) : bez.generator.params;
+        ////          bez.controlPoints = generatorFunc(params);
+        ////      ※ただし、案BはHistory（Undo/Redo用のJSON文字列化）やIndexedDBへの保存時に、オブジェクトに含めた「関数（resolve）」がJSONシリアライズの過程で脱落するため、復元時の再注入処理（デシリアライズ時のリハイドレーション）が必要になるデメリットがある。その観点からは、純粋なデータのみをシリアライズ対象とし、解決ロジック自体は外部（案Aなど）で一元管理する方が安全。
+        ////
+        //// コネクタ (connector) の state 依存脱却と shape.points 導入について:
+        //// 1. connector の解決においても、arc と同様に main.js 側で x, y, dx, dy などの接続先座標/接線情報を事前に解決して渡すようにすれば、MDMath の完全な state 独立が達成できる。
+        //// 2. 重複している t などの座標パラメータを親 Shape 側の points: [{ bezierId, t }, ...] に一元化・集約する案:
+        ////   - メリット: 重複したパラメータが存在しない Single Source of Truth となるため、同一頂点の t がズレて接続が破綻するバグを防げる。また $t$ スライダや頂点増減などの汎用 JSON 編集 UI が作りやすくなる。
+        ////   - デメリット: connector が自分の座標を求めるために「親の points の何番目（インデックス）を参照すべきか」という Shape レベルのトポロジー（コンテナ構造）と密結合し、トポロジー変更処理（追加・削除・Wrap等）のすべてのロジックを一新する必要があり、依存関係の解決難易度・移行コストが高くなる。
     }
 
     if (!bez.controlPoints || bez.controlPoints.length < 4) return;
