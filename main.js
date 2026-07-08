@@ -803,8 +803,11 @@ function handlePaste(ctx) {
 
         if (bez.generator) {
             if (bez.generator.type === 'arc') {
-                bez.generator.params.x += offset;
-                bez.generator.params.y += offset;
+                // 新しいコピー先 Shape の ID に紐付ける
+                const oldShapeId = bez.generator.params.s;
+                if (oldShapeId && shapeIdMap[oldShapeId]) {
+                    bez.generator.params.s = shapeIdMap[oldShapeId];
+                }
             } else if (bez.generator.type === 'connector') {
                 const { src1, src2 } = bez.generator.params;
                 src1.bezierId = bezierIdMap[src1.bezierId];
@@ -823,6 +826,11 @@ function handlePaste(ctx) {
         const newShapeId = shapeIdMap[oldShape.id];
         const shape = JSON.parse(JSON.stringify(oldShape));
         shape.id = newShapeId;
+
+        if (shape.props) {
+            shape.props.x += offset;
+            shape.props.y += offset;
+        }
 
         if (shape.bezierIds) {
             shape.bezierIds = shape.bezierIds.map(bid => bezierIdMap[bid]);
@@ -1873,13 +1881,6 @@ function moveShapes(shapeIds, dx, dy) {
                 shape.props.x += dx;
                 shape.props.y += dy;
             }
-            shape.bezierIds.forEach(bid => {
-                const bez = state.beziers[bid];
-                if (bez && bez.generator && bez.generator.type === 'arc') {
-                    bez.generator.params.x += dx;
-                    bez.generator.params.y += dy;
-                }
-            });
             markShapeDirty(id);
         }
     });
@@ -1893,15 +1894,6 @@ function scaleShapes(shapeIds, factor, cx, cy) {
             if (shape.props) {
                 MDMath.transformCircle(shape.props, cx, cy, 0, factor);
             }
-            shape.bezierIds.forEach(bid => {
-                const bez = state.beziers[bid];
-                if (bez && bez.generator && bez.generator.type === 'arc') {
-                    const params = bez.generator.params;
-                    params.x = cx + (params.x - cx) * factor;
-                    params.y = cy + (params.y - cy) * factor;
-                    params.r *= factor;
-                }
-            });
             markShapeDirty(id);
         }
     });
@@ -1910,8 +1902,6 @@ function scaleShapes(shapeIds, factor, cx, cy) {
 
 function rotateShapes(shapeIds, angle, cx, cy) {
     const rad = angle * Math.PI / 180;
-    const cosVal = Math.cos(rad);
-    const sinVal = Math.sin(rad);
 
     shapeIds.forEach(id => {
         const shape = state.shapes[id];
@@ -1919,18 +1909,6 @@ function rotateShapes(shapeIds, angle, cx, cy) {
             if (shape.props) {
                 MDMath.transformCircle(shape.props, cx, cy, rad, 1);
             }
-            shape.bezierIds.forEach(bid => {
-                const bez = state.beziers[bid];
-                if (bez && bez.generator && bez.generator.type === 'arc') {
-                    const params = bez.generator.params;
-                    const dx = params.x - cx;
-                    const dy = params.y - cy;
-                    params.x = cx + dx * cosVal - dy * sinVal;
-                    params.y = cy + dx * sinVal + dy * cosVal;
-                    params.startAngle += rad;
-                    params.endAngle += rad;
-                }
-            });
             markShapeDirty(id);
         }
     });
@@ -1942,12 +1920,12 @@ function addShapeAt(type, x, y) {
     const bIds = [], r = 50;
     if (type === 'circle') {
         for (let i = 0; i < 4; i++) {
-            const bId = generateId('b'), a = (i * Math.PI) / 2, na = ((i + 1) * Math.PI) / 2;
+            const bId = generateId('b');
             state.beziers[bId] = {
                 id: bId,
                 generator: {
                     type: 'arc',
-                    params: { x, y, r, startAngle: a, endAngle: na, initialStartAngle: a, initialEndAngle: na }
+                    params: { s: id, i }
                 },
                 controlPoints: [], samplePointByT: {}, boundingBox: {}
             };

@@ -7,23 +7,27 @@ const MDMath = {
 
     generators: {
         arc: (params, state, bezierId) => {
-            let x = params.x;
-            let y = params.y;
-            let r = params.r;
-            let startAngle = params.startAngle;
-            let endAngle = params.endAngle;
+            let x = 0, y = 0, r = 50, startAngle = 0, endAngle = Math.PI / 2;
 
-            // もし state と bezierId が提供されており、そのベジェを使用している Shape の props に x, y, r, a が定義されている場合、それを利用する
-            if (state && state.shapes && bezierId) {
-                const parentShape = Object.values(state.shapes).find(s => s.bezierIds && s.bezierIds.includes(bezierId));
+            if (state && state.shapes) {
+                // params.s に紐づく親 Shape を直接参照
+                const parentShape = state.shapes[params.s];
                 if (parentShape && parentShape.props) {
                     const props = parentShape.props;
                     if (props.x !== undefined) x = props.x;
                     if (props.y !== undefined) y = props.y;
                     if (props.r !== undefined) r = props.r;
-                    if (props.a !== undefined && params.initialStartAngle !== undefined && params.initialEndAngle !== undefined) {
-                        startAngle = params.initialStartAngle + props.a;
-                        endAngle = params.initialEndAngle + props.a;
+                    
+                    const i = params.i || 0;
+                    const initialStartAngle = (i * Math.PI) / 2;
+                    const initialEndAngle = ((i + 1) * Math.PI) / 2;
+                    
+                    if (props.a !== undefined) {
+                        startAngle = initialStartAngle + props.a;
+                        endAngle = initialEndAngle + props.a;
+                    } else {
+                        startAngle = initialStartAngle;
+                        endAngle = initialEndAngle;
                     }
                 }
             }
