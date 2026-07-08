@@ -156,14 +156,6 @@ const keyHandlers = {
         //     keydown: { f: handleTransformStart, needsRender: true }, // 移動開始
         //     keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 移動終了
         // },
-        s: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 拡大縮小開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 拡大縮小終了
-        },
-        r: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 回転開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 回転終了
-        },
         t: {
             keydown: { f: handleTransformStart, needsRender: true }, // t値（または太さ編集t位置）スライド開始
             keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // t値（または太さ編集t位置）スライド終了
@@ -201,19 +193,7 @@ const keyHandlers = {
     }
 };
 
-// モードごとのポインタ移動イベントハンドラ定義
 const modeHandlers = {
-    //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
-    move: {
-        pointermove: { f: handleMove, needsRender: true }
-        //// f: () => updateByMouseDelta(state.selectedShape, ['x', 'y']),  のように修正予定。後続の handleScale , handleRotate も同様に修正したいが、複数 shape をまとめて変形する場合にもうひと工夫必要か。→ MDMath.transformCircle を実装しておいたので、これを使う方向で検討を進める。
-    },
-    scale: {
-        pointermove: { f: handleScale, needsRender: true }
-    },
-    rotate: {
-        pointermove: { f: handleRotate, needsRender: true }
-    },
     //// キー+マウス移動量によるイベントだが、キーとマウスの記述が離れているのが違和感。構造再検討中。
     't-slide': {
         pointermove: { f: handleTSlide, needsRender: true }
@@ -244,12 +224,9 @@ const modeHandlers = {
 const interactionMap = {
     view_canvas: { // キャンバスビューで。
         pointermove_while_key_press: {
-            //// mキーによる移動、rキーによる回転...
-            m: {},
-            r: {},
-            // :
-            // :
-            // :
+            m: { f: handleMove, needsRender: true, pushHistory: true },
+            r: { f: handleRotate, needsRender: true, pushHistory: true },
+            s: { f: handleScale, needsRender: true, pushHistory: true },
         },
         key_down: {
             //// cキーによる円作成 ... 
@@ -291,6 +268,12 @@ const newElm = (elementName, attributes) => Object.assign(document.createElement
 const filterAttribute = (obj, keys) => Object.fromEntries(keys.map(key => [key, obj[key]]));
 const getSVGPoint = (e, svg, vp) => Object.assign(svg.createSVGPoint(), state.input.pointer).matrixTransform(vp.getScreenCTM().inverse());
 const getMainCanvasSVGPoint = () => getSVGPoint(null, getDom('#guide-svg'), getDom('#guide-svg #viewport'));
+const getSVGVector = (screenVector, svg, vp) => {
+    const p1 = Object.assign(svg.createSVGPoint(), { x: 0, y: 0 }).matrixTransform(vp.getScreenCTM().inverse());
+    const p2 = Object.assign(svg.createSVGPoint(), screenVector).matrixTransform(vp.getScreenCTM().inverse());
+    return { dx: p2.x - p1.x, dy: p2.y - p1.y };
+};
+const getMainCanvasSVGVector = () => getSVGVector(state.input.dPointer, getDom('#guide-svg'), getDom('#guide-svg #viewport'));
 const isFocusEditable = () => !!(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable));
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -519,6 +502,7 @@ function initEvents() {
             state.input.pointer = { x: e.clientX, y: e.clientY };
 
             handleInputUpdate('pointermove');
+            handleInputUpdate_test(e);
         }
     }); /* window.pointermove */
 
@@ -535,12 +519,14 @@ function initEvents() {
         if (isFocusEditable()) return;
         state.input.keys[e.key] = true;
         await handleInputUpdate('keydown', e.key, e);
+        await handleInputUpdate_test(e);
     }); /* window.keydown */
 
     window.addEventListener('keyup', async e => {
         if (isFocusEditable()) return;
         state.input.keys[e.key] = false;
         await handleInputUpdate('keyup', e.key, e);
+        await handleInputUpdate_test(e);
     }); /* window.keyup */
 
     getDom('#btn-toggle-settings').onclick = () => {
@@ -1163,6 +1149,7 @@ function handleTransformStart(ctx) {
                 start: { ...state.input.pointerOnSVG },
                 type: 'key-hold'
             };
+            updateTransformPivotToCenter();
         }
         state.interaction.mode = desiredMode;
     }
@@ -1188,7 +1175,7 @@ function handleTransformEnd(ctx) {
             mappedMode = 'w-slide-thickness';
         }
     } else {
-        const modeMap = { m: 'move', s: 'scale', r: 'rotate', t: 't-slide', d: 'd-dist' };
+        const modeMap = { t: 't-slide', d: 'd-dist' };
         mappedMode = modeMap[key];
     }
 
@@ -1212,6 +1199,7 @@ function handlePointerDownStart(ctx) {
             if (!state.selectedShapeIds.includes(hit.shape.id)) {
                 state.selectedShapeIds = [hit.shape.id];
                 state.focusedVertex = null; // 図形選択変更時に頂点フォーカスをクリア
+                updateTransformPivotToCenter();
             }
         }
     } else {
@@ -1219,6 +1207,7 @@ function handlePointerDownStart(ctx) {
             start: { ...state.input.dragStartOnSVG },
             type: 'drag'
         };
+        updateTransformPivotToCenter();
     }
 }
 
@@ -1233,42 +1222,43 @@ function handlePointerUpEnd(ctx) {
     } else if (state.dragInfo && !state.lastHit) {
         state.selectedShapeIds = [];
         state.focusedVertex = null; // 頂点フォーカスもクリア
+        updateTransformPivotToCenter();
         needsRender = true;
     }
     state.dragInfo = null;
     return { needsRender, pushHistory };
 }
 
-// 変形処理: 移動
-function handleMove(ctx) {
-    const targetIds = Array.from(new Set([...state.selectedShapeIds, ...(state.anchoredShapeIds || [])]));
-    if (targetIds.length > 0) {
-        moveShapes(targetIds, ctx.dx, ctx.dy);
+function getTransformTargetIds() {
+    return Array.from(new Set([...state.selectedShapeIds, ...(state.anchoredShapeIds || [])]));
+}
+
+function updateTransformPivotToCenter() {
+    const targetIds = getTransformTargetIds();
+    const bounds = getCombinedBounds(targetIds);
+    if (bounds) {
+        state.transformPivot = { x: bounds.cx, y: bounds.cy };
+    } else {
+        state.transformPivot = null;
     }
+}
+
+// 変形処理: 移動
+function handleMove() {
+    const sVec = getMainCanvasSVGVector();
+    transformShapes(getTransformTargetIds(), sVec.dx, sVec.dy, 0, 0, 1, 0);
 }
 
 // 変形処理: 拡大縮小
-function handleScale(ctx) {
-    const targetIds = Array.from(new Set([...state.selectedShapeIds, ...(state.anchoredShapeIds || [])]));
-    if (targetIds.length > 0) {
-        const bounds = getCombinedBounds(targetIds);
-        if (bounds) {
-            const scaleFactor = 1 + ctx.dx * 0.01;
-            scaleShapes(targetIds, scaleFactor, bounds.cx, bounds.cy);
-        }
-    }
+function handleScale() {
+    const sVec = getMainCanvasSVGVector();
+    transformShapes(getTransformTargetIds(), 0, 0, state.transformPivot.x, state.transformPivot.y, 1 + sVec.dx * 0.01, 0);
 }
 
 // 変形処理: 回転
-function handleRotate(ctx) {
-    const targetIds = Array.from(new Set([...state.selectedShapeIds, ...(state.anchoredShapeIds || [])]));
-    if (targetIds.length > 0) {
-        const bounds = getCombinedBounds(targetIds);
-        if (bounds) {
-            const angle = ctx.dx * 0.5; // degrees
-            rotateShapes(targetIds, angle, bounds.cx, bounds.cy);
-        }
-    }
+function handleRotate() {
+    const sVec = getMainCanvasSVGVector();
+    transformShapes(getTransformTargetIds(), 0, 0, state.transformPivot.x, state.transformPivot.y, 1, (sVec.dx * 0.5) * Math.PI / 180);
 }
 
 // 変形処理: t値スライド (頂点スライド)
@@ -1461,6 +1451,31 @@ async function handleInputUpdate_test(event) {
                 event.stopPropagation();
                 break;
             }
+        }
+    }
+
+    const movePressMap = interactionMap[viewKey]?.pointermove_while_key_press;
+    if (event.type === 'pointermove' && movePressMap) {
+        for (const key in movePressMap) {
+            if (state.input.keys[key] || state.input.keys[key.toUpperCase()]) {
+                interaction = movePressMap[key];
+                break;
+            }
+        }
+    }
+
+    // キーが押されたタイミングで変形のピボットを初期化する
+    if (event.type === 'keydown' && movePressMap && movePressMap[event.key]) {
+        updateTransformPivotToCenter();
+    }
+
+    // キーが離されたタイミングで変形を確定して履歴保存する
+    if (event.type === 'keyup' && movePressMap) {
+        const key = event.key;
+        if (movePressMap[key]) {
+            rasterizeInactiveLayers();
+            pushHistory();
+            renderCanvas();
         }
     }
 
@@ -1895,13 +1910,14 @@ function getCombinedBounds(shapeIds) {
     };
 }
 
-function moveShapes(shapeIds, dx, dy) {
+function transformShapes(shapeIds, dx, dy, cx, cy, factor, angleRad) {
+    //// dx, dy, cx, cy, factor, angleRadをまとめて 3x3 の行列にすることも考えられるが、シア、縦横個別に拡大縮小などが必要になってから考える。
+    if (!shapeIds || shapeIds.length === 0) return;
     shapeIds.forEach(id => {
         const shape = state.shapes[id];
         if (shape && shape.bezierIds) {
             if (shape.props) {
-                // transformCircle を使って平行移動 (a=0, r=1)
-                MDMath.transformCircle(shape.props, 0, 0, 0, 1);
+                MDMath.transformCircle(shape.props, cx, cy, angleRad, factor);
                 shape.props.x += dx;
                 shape.props.y += dy;
             }
@@ -1911,33 +1927,7 @@ function moveShapes(shapeIds, dx, dy) {
     resolveBezierDependencies();
 }
 
-function scaleShapes(shapeIds, factor, cx, cy) {
-    shapeIds.forEach(id => {
-        const shape = state.shapes[id];
-        if (shape && shape.bezierIds) {
-            if (shape.props) {
-                MDMath.transformCircle(shape.props, cx, cy, 0, factor);
-            }
-            markShapeDirty(id);
-        }
-    });
-    resolveBezierDependencies();
-}
 
-function rotateShapes(shapeIds, angle, cx, cy) {
-    const rad = angle * Math.PI / 180;
-
-    shapeIds.forEach(id => {
-        const shape = state.shapes[id];
-        if (shape && shape.bezierIds) {
-            if (shape.props) {
-                MDMath.transformCircle(shape.props, cx, cy, rad, 1);
-            }
-            markShapeDirty(id);
-        }
-    });
-    resolveBezierDependencies();
-}
 
 function addShapeAt(type, x, y) {
     const id = generateId('s');
