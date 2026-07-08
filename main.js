@@ -17,6 +17,7 @@ const state = {
     pan: { x: 0, y: 0 },
     history: [],
     historyIndex: -1,
+    pushHistoryOnKeyUp: false, // キーボードを離したタイミングでヒストリ保存するフラグ
     selectedShapeIds: [],
     anchoredShapeIds: [], // アンカーされた図形ID。オレンジ色で表示。
     focusedVertex: null,   // 現在フォーカスされているベジェ端点（調整ハンドル）。構造: { shapeId, vertexIdx } (vertexIdx: 0〜2N-1)
@@ -224,9 +225,9 @@ const modeHandlers = {
 const interactionMap = {
     view_canvas: { // キャンバスビューで。
         pointermove_while_key_press: {
-            m: { f: handleMove, needsRender: true, pushHistory: true },
-            r: { f: handleRotate, needsRender: true, pushHistory: true },
-            s: { f: handleScale, needsRender: true, pushHistory: true },
+            m: { f: handleMove, needsRender: true, pushHistoryOnKeyUp: true },
+            r: { f: handleRotate, needsRender: true, pushHistoryOnKeyUp: true },
+            s: { f: handleScale, needsRender: true, pushHistoryOnKeyUp: true },
         },
         key_down: {
             //// cキーによる円作成 ... 
@@ -1464,7 +1465,7 @@ async function handleInputUpdate_test(event) {
         }
     }
 
-    // キーが押されたタイミングで変形のピボットを初期化する
+    // キーが押されたタイミングで変形のピボットを初期化する //// ここは、m,s,rが押されたタイミングとするか微妙なところ。別のキー＋マウス移動で変形中心だけ移動し、その後 m,s,rキー＋マウス移動 で変形、を検討中。
     if (event.type === 'keydown' && movePressMap && movePressMap[event.key]) {
         updateTransformPivotToCenter();
     }
@@ -1472,10 +1473,9 @@ async function handleInputUpdate_test(event) {
     // キーが離されたタイミングで変形を確定して履歴保存する
     if (event.type === 'keyup' && movePressMap) {
         const key = event.key;
-        if (movePressMap[key]) {
-            rasterizeInactiveLayers();
+        const config = movePressMap[key];
+        if (config && config.pushHistoryOnKeyUp) {
             pushHistory();
-            renderCanvas();
         }
     }
 
