@@ -1758,9 +1758,20 @@ function updateBezier(id) {
 
     const generatorFunc = MDMath.generators[bez.generator.type];
     if (generatorFunc) {
-        bez.controlPoints = bez.generator.type === 'connector'
-            ? generatorFunc(state, bez.generator.params)
-            : generatorFunc(bez.generator.params, state, id);
+        if (bez.generator.type === 'arc') {
+            const parentShape = state.shapes[bez.generator.params.s];
+            const props = parentShape?.props || { x: 0, y: 0, r: 50, a: 0 };
+            const resolvedParams = {
+                x: props.x,
+                y: props.y,
+                r: props.r !== undefined ? props.r : 50,
+                a: props.a !== undefined ? props.a : 0,
+                i: bez.generator.params.i || 0
+            };
+            bez.controlPoints = generatorFunc(resolvedParams);
+        } else {
+            bez.controlPoints = generatorFunc(state, bez.generator.params);
+        }
     }
 
     if (!bez.controlPoints || bez.controlPoints.length < 4) return;

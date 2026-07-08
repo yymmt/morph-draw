@@ -6,31 +6,17 @@ const MDMath = {
     PI2: Math.PI * 2,
 
     generators: {
-        arc: (params, state, bezierId) => {
-            let x = 0, y = 0, r = 50, startAngle = 0, endAngle = Math.PI / 2;
+        arc: (params) => {
+            const x = params.x;
+            const y = params.y;
+            const r = params.r;
+            const a = params.a;
+            const i = params.i;
 
-            if (state && state.shapes) {
-                // params.s に紐づく親 Shape を直接参照
-                const parentShape = state.shapes[params.s];
-                if (parentShape && parentShape.props) {
-                    const props = parentShape.props;
-                    if (props.x !== undefined) x = props.x;
-                    if (props.y !== undefined) y = props.y;
-                    if (props.r !== undefined) r = props.r;
-                    
-                    const i = params.i || 0;
-                    const initialStartAngle = (i * Math.PI) / 2;
-                    const initialEndAngle = ((i + 1) * Math.PI) / 2;
-                    
-                    if (props.a !== undefined) {
-                        startAngle = initialStartAngle + props.a;
-                        endAngle = initialEndAngle + props.a;
-                    } else {
-                        startAngle = initialStartAngle;
-                        endAngle = initialEndAngle;
-                    }
-                }
-            }
+            const initialStartAngle = (i * Math.PI) / 2;
+            const initialEndAngle = ((i + 1) * Math.PI) / 2;
+            const startAngle = initialStartAngle + a;
+            const endAngle = initialEndAngle + a;
 
             const p0 = { x: x + Math.cos(startAngle) * r, y: y + Math.sin(startAngle) * r };
             const p3 = { x: x + Math.cos(endAngle) * r, y: y + Math.sin(endAngle) * r };
@@ -44,7 +30,7 @@ const MDMath = {
             };
             return [{ v: p0 }, { v: p1 }, { v: p2 }, { v: p3 }];
         },
-        connector: (state, params) => {
+        connector: (state, params) => { //// ここも検討中。
             const { src1, src2, d1, d2 } = params;
             const bez1 = state.beziers[src1.bezierId];
             const bez2 = state.beziers[src2.bezierId];
