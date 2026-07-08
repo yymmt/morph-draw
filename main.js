@@ -152,10 +152,10 @@ const keyHandlers = {
         a: { keydown: { f: handleToggleAnchor } }, // アンカートグル / 頂点追加待機
         Enter: { keydown: { f: handleEnterAction } }, // 頂点割り込み接続決定
 
-        m: {
-            keydown: { f: handleTransformStart, needsRender: true }, // 移動開始
-            keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 移動終了
-        },
+        // m: {
+        //     keydown: { f: handleTransformStart, needsRender: true }, // 移動開始
+        //     keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 移動終了
+        // },
         s: {
             keydown: { f: handleTransformStart, needsRender: true }, // 拡大縮小開始
             keyup: { f: handleTransformEnd, pushHistory: true, needsRender: true } // 拡大縮小終了
@@ -1752,7 +1752,7 @@ function updateBezier(id) {
     if (generatorFunc) {
         bez.controlPoints = bez.generator.type === 'connector'
             ? generatorFunc(state, bez.generator.params)
-            : generatorFunc(bez.generator.params);
+            : generatorFunc(bez.generator.params, state, id);
     }
 
     if (!bez.controlPoints || bez.controlPoints.length < 4) return;
@@ -1867,6 +1867,12 @@ function moveShapes(shapeIds, dx, dy) {
     shapeIds.forEach(id => {
         const shape = state.shapes[id];
         if (shape && shape.bezierIds) {
+            if (shape.props) {
+                // transformCircle を使って平行移動 (a=0, r=1)
+                MDMath.transformCircle(shape.props, 0, 0, 0, 1);
+                shape.props.x += dx;
+                shape.props.y += dy;
+            }
             shape.bezierIds.forEach(bid => {
                 const bez = state.beziers[bid];
                 if (bez && bez.generator && bez.generator.type === 'arc') {
@@ -1884,6 +1890,9 @@ function scaleShapes(shapeIds, factor, cx, cy) {
     shapeIds.forEach(id => {
         const shape = state.shapes[id];
         if (shape && shape.bezierIds) {
+            if (shape.props) {
+                MDMath.transformCircle(shape.props, cx, cy, 0, factor);
+            }
             shape.bezierIds.forEach(bid => {
                 const bez = state.beziers[bid];
                 if (bez && bez.generator && bez.generator.type === 'arc') {
@@ -1907,6 +1916,9 @@ function rotateShapes(shapeIds, angle, cx, cy) {
     shapeIds.forEach(id => {
         const shape = state.shapes[id];
         if (shape && shape.bezierIds) {
+            if (shape.props) {
+                MDMath.transformCircle(shape.props, cx, cy, rad, 1);
+            }
             shape.bezierIds.forEach(bid => {
                 const bez = state.beziers[bid];
                 if (bez && bez.generator && bez.generator.type === 'arc') {
@@ -1935,7 +1947,7 @@ function addShapeAt(type, x, y) {
                 id: bId,
                 generator: {
                     type: 'arc',
-                    params: { x, y, r, startAngle: a, endAngle: na }
+                    params: { x, y, r, startAngle: a, endAngle: na, initialStartAngle: a, initialEndAngle: na }
                 },
                 controlPoints: [], samplePointByT: {}, boundingBox: {}
             };
@@ -1944,7 +1956,7 @@ function addShapeAt(type, x, y) {
     }
     const count = Object.values(state.shapes).filter(s => s.name && s.name.startsWith(type)).length + 1;
     const shape = {
-        id, type: 'bezier-group', name: `${type} ${count}`, bezierIds: bIds, props: { x, y },
+        id, type: 'bezier-group', name: `${type} ${count}`, bezierIds: bIds, props: { x, y, r: type === 'circle' ? r : undefined, a: type === 'circle' ? 0 : undefined },
         style: { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true },
         strokeWidthData: [{ t: 0, w: 10 }, { t: 1, w: 10 }],
         childIds: []

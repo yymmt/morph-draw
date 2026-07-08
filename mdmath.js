@@ -6,8 +6,28 @@ const MDMath = {
     PI2: Math.PI * 2,
 
     generators: {
-        arc: (params) => {
-            const { x, y, r, startAngle, endAngle } = params;
+        arc: (params, state, bezierId) => {
+            let x = params.x;
+            let y = params.y;
+            let r = params.r;
+            let startAngle = params.startAngle;
+            let endAngle = params.endAngle;
+
+            // もし state と bezierId が提供されており、そのベジェを使用している Shape の props に x, y, r, a が定義されている場合、それを利用する
+            if (state && state.shapes && bezierId) {
+                const parentShape = Object.values(state.shapes).find(s => s.bezierIds && s.bezierIds.includes(bezierId));
+                if (parentShape && parentShape.props) {
+                    const props = parentShape.props;
+                    if (props.x !== undefined) x = props.x;
+                    if (props.y !== undefined) y = props.y;
+                    if (props.r !== undefined) r = props.r;
+                    if (props.a !== undefined && params.initialStartAngle !== undefined && params.initialEndAngle !== undefined) {
+                        startAngle = params.initialStartAngle + props.a;
+                        endAngle = params.initialEndAngle + props.a;
+                    }
+                }
+            }
+
             const p0 = { x: x + Math.cos(startAngle) * r, y: y + Math.sin(startAngle) * r };
             const p3 = { x: x + Math.cos(endAngle) * r, y: y + Math.sin(endAngle) * r };
             const p1 = {
