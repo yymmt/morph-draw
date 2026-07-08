@@ -1474,7 +1474,8 @@ async function handleInputUpdate_test(event) {
     if (event.type === 'keyup' && movePressMap) {
         const key = event.key;
         const config = movePressMap[key];
-        if (config && config.pushHistoryOnKeyUp) {
+        if (state.pushHistoryOnKeyUp) {
+            state.pushHistoryOnKeyUp = false;
             pushHistory();
         }
     }
@@ -1487,6 +1488,9 @@ async function handleInputUpdate_test(event) {
     }
     if (interaction?.needsRender) {
         renderCanvas();
+    }
+    if (interaction?.pushHistoryOnKeyUp) {
+        state.pushHistoryOnKeyUp = true;
     }
 }
 
