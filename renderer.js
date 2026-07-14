@@ -134,10 +134,12 @@ function renderCanvas() {
     const underCanvas = getDom('#under-canvas');
     const activeCanvas = getDom('#active-canvas');
     const overCanvas = getDom('#over-canvas');
+    const draftCanvas = getDom('#draft-canvas');
 
     drawOffscreenToOnscreen(underCanvas, state.canvas.underOffscreen);
     drawOffscreenToOnscreen(activeCanvas, state.canvas.activeOffscreen);
     drawOffscreenToOnscreen(overCanvas, state.canvas.overOffscreen);
+    drawOffscreenToOnscreen(draftCanvas, state.canvas.draftOffscreen);
 
     renderMinimap();
     renderLayerList();
@@ -369,6 +371,7 @@ function renderMinimap() {
     if (state.canvas.underOffscreen) ctx.drawImage(state.canvas.underOffscreen, 0, 0);
     if (state.canvas.activeOffscreen) ctx.drawImage(state.canvas.activeOffscreen, 0, 0);
     if (state.canvas.overOffscreen) ctx.drawImage(state.canvas.overOffscreen, 0, 0);
+    if (state.canvas.draftOffscreen) ctx.drawImage(state.canvas.draftOffscreen, 0, 0);
 
     ctx.restore();
 }

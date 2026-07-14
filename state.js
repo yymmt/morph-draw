@@ -56,7 +56,6 @@ const state = {
         pointerOnSVG: { x: 0, y: 0 },
         dragStartOnSVG: null,
         pointer: { x: 0, y: 0 },
-        aPointer: { x: 0, y: 0 },
         dPointer: { x: 0, y: 0 },
         deltaY: 0,
         modifier: 'no_mod', // '', 'ctrl', 'shift', 'ctrl_shift'
@@ -73,7 +72,8 @@ const state = {
         height: 2000,
         underOffscreen: null,
         activeOffscreen: null,
-        overOffscreen: null
+        overOffscreen: null,
+        draftOffscreen: null
     },
     /**
      * Resets the active canvas data.
@@ -237,6 +237,20 @@ const interactionMap = {
             m: { f: () => handleMove(), needsRender: true, pushHistoryOnKeyUp: true },
             r: { f: () => handleRotate(), needsRender: true, pushHistoryOnKeyUp: true },
             s: { f: () => handleScale(), needsRender: true, pushHistoryOnKeyUp: true },
+            x: {
+                f: () => {
+                    const draftCtx = state.canvas.draftOffscreen.getContext('2d');
+                    const curr = state.input.pointerOnSVG;
+                    const d = getMainCanvasSVGVector();
+                    draftCtx.beginPath();
+                    draftCtx.moveTo(curr.x - d.dx, curr.y - d.dy);
+                    draftCtx.lineTo(curr.x, curr.y);
+                    draftCtx.strokeStyle = '#000000';
+                    draftCtx.lineWidth = 1;
+                    draftCtx.stroke();
+                },
+                needsRender: true
+            },
         },
         key_down: {
             c: {},
@@ -417,6 +431,7 @@ function initOffscreenCanvases() {
     state.canvas.underOffscreen = newElm('canvas', sizeAttrs);
     state.canvas.activeOffscreen = newElm('canvas', sizeAttrs);
     state.canvas.overOffscreen = newElm('canvas', sizeAttrs);
+    state.canvas.draftOffscreen = newElm('canvas', sizeAttrs);
     initWebGLPatternRenderer();
 }
 
@@ -435,6 +450,10 @@ function resizeOffscreenCanvases() {
     if (state.canvas.overOffscreen) {
         state.canvas.overOffscreen.width = state.canvas.width;
         state.canvas.overOffscreen.height = state.canvas.height;
+    }
+    if (state.canvas.draftOffscreen) {
+        state.canvas.draftOffscreen.width = state.canvas.width;
+        state.canvas.draftOffscreen.height = state.canvas.height;
     }
     if (state.patternWebGLCanvas) {
         state.patternWebGLCanvas.width = state.canvas.width;

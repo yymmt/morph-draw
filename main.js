@@ -62,11 +62,11 @@ function initEvents() {
 
     window.addEventListener('pointermove', (e) => {
         if (state.view === 'canvas') {
-            const pt = getMainCanvasSVGPoint();
-            state.input.pointerOnSVG = { x: pt.x, y: pt.y };
-
             state.input.dPointer = { x: e.clientX - state.input.pointer.x, y: e.clientY - state.input.pointer.y };
             state.input.pointer = { x: e.clientX, y: e.clientY };
+
+            const pt = getMainCanvasSVGPoint();
+            state.input.pointerOnSVG = { x: pt.x, y: pt.y };
 
             handleInputUpdate_old('pointermove');
             handleInputUpdate(e);
@@ -221,4 +221,17 @@ function initEvents() {
 
     if (svg) registerHoverListener(svg);
     if (minimapCanvas) registerHoverListener(minimapCanvas);
+}
+
+/**
+ * Registers mouseenter and mouseleave event listeners to track which canvas/SVG element the user is hovering over.
+ * @param {Element} elm - The target DOM element.
+ */
+function registerHoverListener(elm) {
+    elm.addEventListener('mouseenter', () => {
+        state.input.hoverOn = elm.id;
+    });
+    elm.addEventListener('mouseleave', () => {
+        state.input.hoverOn = '';
+    });
 }
