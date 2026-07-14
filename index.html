@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>MorphDraw</title>
     <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="image/icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -13,7 +14,7 @@
         rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/ress/dist/ress.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <link rel="stylesheet" href="style.css?v=76">
+    <link rel="stylesheet" href="style.css?v=111">
 </head>
 
 <body>
@@ -153,12 +154,15 @@
                         <div class="settings-group">
                             <label class="settings-label">キャンバスサイズ</label>
                             <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-                                <input id="input-canvas-width" class="settings-input" type="number" placeholder="幅" style="width: 100px;">
+                                <input id="input-canvas-width" class="settings-input" type="number" placeholder="幅"
+                                    style="width: 100px;">
                                 <span style="color: #666;">x</span>
-                                <input id="input-canvas-height" class="settings-input" type="number" placeholder="高さ" style="width: 100px;">
+                                <input id="input-canvas-height" class="settings-input" type="number" placeholder="高さ"
+                                    style="width: 100px;">
                             </div>
                         </div>
-                        <button id="btn-save-image-settings" class="small-btn" style="width: 100%; padding: 8px 12px; margin-top: 8px;">設定を保存</button>
+                        <button id="btn-save-image-settings" class="small-btn"
+                            style="width: 100%; padding: 8px 12px; margin-top: 8px;">設定を保存</button>
                     </div>
                     <!-- Common Settings Tab -->
                     <div class="settings-tab-content" id="tab-common">
@@ -172,7 +176,9 @@
             <main id="canvas-container">
                 <canvas id="under-canvas"></canvas>
                 <canvas id="active-canvas"></canvas>
-                <svg id="guide-svg" width="100%" height="100%"></svg>
+                <svg id="guide-svg" width="100%" height="100%">
+                    <g id="viewport" transform=""></g>
+                </svg>
                 <canvas id="over-canvas"></canvas>
                 <div id="thickness-guide" class="hidden">
                     <span>【太さ編集】 t+左右ドラッグ:位置移動 | w+上下ドラッグ:太さ変更 | Shift+t+左右ドラッグ:データ位置変更 | x:データ削除 | Shift+w:終了</span>
@@ -204,10 +210,15 @@
         </div>
     </div>
 
-    <script src="mdmath.js?v=79"></script>
-    <script src="webgl_renderer.js?v=80"></script>
-    <script src="main.js?v=87"></script>
-    <script src="test.js?v=86"></script>
+    <script src="mdmath.js?v=111"></script>
+    <script src="webgl_renderer.js?v=111"></script>
+    <script src="state.js?v=111"></script>
+    <script src="db.js?v=111"></script>
+    <script src="history.js?v=111"></script>
+    <script src="renderer.js?v=111"></script>
+    <script src="editor.js?v=111"></script>
+    <script src="main.js?v=111"></script>
+    <script src="test.js?v=111"></script>
 </body>
 
 </html>

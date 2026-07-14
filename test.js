@@ -2,7 +2,7 @@
  * MorphDraw - テスト & デバッグヘルパー
  */
 
-(function() {
+(function () {
     // 状態のリセット & IndexedDBクリア
     async function reset() {
         state.shapes = {};
@@ -29,7 +29,7 @@
                 console.error('Failed to clear IndexedDB:', e);
             }
         }
-        
+
         switchView('gallery');
         loadGallery();
         if (typeof rasterizeInactiveLayers !== 'undefined') rasterizeInactiveLayers();
@@ -69,17 +69,17 @@
             metaKey: false,
             altKey: false,
             shiftKey: shift,
-            preventDefault: () => {}
+            preventDefault: () => { }
         };
 
         // 1. キーダウン
         if (key) {
             state.input.keys[key] = true;
-            await handleInputUpdate('keydown', key, rawEvent);
+            await handleInputUpdate_old('keydown', key, rawEvent);
         }
         if (shift) {
             state.input.keys['Shift'] = true;
-            await handleInputUpdate('keydown', 'Shift', rawEvent);
+            await handleInputUpdate_old('keydown', 'Shift', rawEvent);
         }
         state.input.pointer = { x: startX, y: startY };
 
@@ -94,7 +94,7 @@
         if (isDrag) {
             state.input.isPointerDown = true;
             state.input.dragStart = { x: startX, y: startY };
-            await handleInputUpdate('pointerdown', null, rawEvent);
+            await handleInputUpdate_old('pointerdown', null, rawEvent);
         }
 
         // 2. pointermove (複数ステップに分けて徐々に動かす)
@@ -103,24 +103,24 @@
                 x: startX + (deltaX * i) / steps,
                 y: startY + (deltaY * i) / steps
             };
-            await handleInputUpdate('pointermove', null, rawEvent);
+            await handleInputUpdate_old('pointermove', null, rawEvent);
         }
 
         // 3. pointerup (ドラッグ終了)
         if (isDrag) {
             state.input.isPointerDown = false;
             state.input.dragStart = null;
-            await handleInputUpdate('pointerup', null, rawEvent);
+            await handleInputUpdate_old('pointerup', null, rawEvent);
         }
 
         // 4. キーアップ
         if (key) {
             state.input.keys[key] = false;
-            await handleInputUpdate('keyup', key, rawEvent);
+            await handleInputUpdate_old('keyup', key, rawEvent);
         }
         if (shift) {
             state.input.keys['Shift'] = false;
-            await handleInputUpdate('keyup', 'Shift', rawEvent);
+            await handleInputUpdate_old('keyup', 'Shift', rawEvent);
         }
     }
 
@@ -131,12 +131,12 @@
             metaKey: false,
             altKey: false,
             shiftKey: shift,
-            preventDefault: () => {}
+            preventDefault: () => { }
         };
         state.input.keys[key] = true;
-        await handleInputUpdate('keydown', key, rawEvent);
+        await handleInputUpdate_old('keydown', key, rawEvent);
         state.input.keys[key] = false;
-        await handleInputUpdate('keyup', key, rawEvent);
+        await handleInputUpdate_old('keyup', key, rawEvent);
     }
 
     // URLハッシュ監視によるシーン自動構築
@@ -158,7 +158,7 @@
             // 円を2つ配置し、1つを選択状態（黄色）、もう1つをアンカー状態（オレンジ）にする
             addShapeAt('circle', 300, 300);
             addShapeAt('circle', 500, 300);
-            
+
             const shapeIds = Object.keys(state.shapes).filter(id => state.shapes[id].type !== 'layer');
             if (shapeIds.length >= 2) {
                 state.selectedShapeIds = [shapeIds[0]];
@@ -169,7 +169,7 @@
             // 円を2つ配置し、コネクターで接続する
             addShapeAt('circle', 300, 300);
             addShapeAt('circle', 500, 300);
-            
+
             const shapeIds = Object.keys(state.shapes).filter(id => state.shapes[id].type !== 'layer');
             if (shapeIds.length >= 2) {
                 state.anchoredShapeIds = [shapeIds[0], shapeIds[1]];
@@ -180,7 +180,7 @@
             // 円を2つ配置し、wrapさせて、そのwrapされたShapeを選択状態にする
             addShapeAt('circle', 300, 300);
             addShapeAt('circle', 500, 350);
-            
+
             const shapeIds = Object.keys(state.shapes).filter(id => state.shapes[id].name && state.shapes[id].name.startsWith('circle'));
             if (shapeIds.length >= 2) {
                 state.anchoredShapeIds = [shapeIds[0], shapeIds[1]];

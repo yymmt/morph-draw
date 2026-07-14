@@ -7,7 +7,17 @@ const MDMath = {
 
     generators: {
         arc: (params) => {
-            const { x, y, r, startAngle, endAngle } = params;
+            const x = params.x;
+            const y = params.y;
+            const r = params.r;
+            const a = params.a;
+            const i = params.i;
+
+            const initialStartAngle = (i * Math.PI) / 2;
+            const initialEndAngle = ((i + 1) * Math.PI) / 2;
+            const startAngle = initialStartAngle + a;
+            const endAngle = initialEndAngle + a;
+
             const p0 = { x: x + Math.cos(startAngle) * r, y: y + Math.sin(startAngle) * r };
             const p3 = { x: x + Math.cos(endAngle) * r, y: y + Math.sin(endAngle) * r };
             const p1 = {
@@ -20,7 +30,7 @@ const MDMath = {
             };
             return [{ v: p0 }, { v: p1 }, { v: p2 }, { v: p3 }];
         },
-        connector: (state, params) => {
+        connector: (state, params) => { //// ここも検討中。
             const { src1, src2, d1, d2 } = params;
             const bez1 = state.beziers[src1.bezierId];
             const bez2 = state.beziers[src2.bezierId];
@@ -174,5 +184,16 @@ const MDMath = {
         }
 
         return { p, nx, ny };
+    },
+
+    transformCircle: (obj, x0, y0, a, r) => {
+        const cos = Math.cos(a);
+        const sin = Math.sin(a);
+        const dx = obj.x - x0;
+        const dy = obj.y - y0;
+        obj.x = x0 + (dx * cos - dy * sin) * r;
+        obj.y = y0 + (dx * sin + dy * cos) * r;
+        if (obj.a !== undefined) obj.a += a;
+        if (obj.r !== undefined) obj.r *= r;
     }
 };
