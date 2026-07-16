@@ -88,6 +88,7 @@ declare global {
         handleAddCircleStart: (ctx: any) => void;
         updateSelectionByDragRect: () => void;
         handlePolylineDeform: () => void;
+        syncDeformSlidersFromState: () => void;
     }
 
     const state: any;
@@ -178,6 +179,7 @@ declare global {
     const handleAddCircleStart: (ctx: any) => void;
     const updateSelectionByDragRect: () => void;
     const handlePolylineDeform: () => void;
+    const syncDeformSlidersFromState: () => void;
 }
 
 export {};

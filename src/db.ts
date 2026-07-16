@@ -319,6 +319,7 @@ function openDrawing(id) {
             state.canvas.width = 800;
             state.canvas.height = 600;
         }
+        state.deformSettings = data.deformSettings || { sigmaCenter: 120, sigmaDist: 1000 };
         const widthInput = getDom('#input-canvas-width');
         const heightInput = getDom('#input-canvas-height');
         if (widthInput && heightInput) {
@@ -326,6 +327,7 @@ function openDrawing(id) {
             heightInput.value = state.canvas.height;
         }
         resizeOffscreenCanvases();
+        syncDeformSlidersFromState();
 
         migrateDrawingData(state.shapes);
         initializeIdCounter();
@@ -486,6 +488,7 @@ function startNewDrawing(type = 'canvas') {
 
     state.canvas.width = 800;
     state.canvas.height = 600;
+    state.deformSettings = { sigmaCenter: 120, sigmaDist: 1000 };
     const widthInput = getDom('#input-canvas-width');
     const heightInput = getDom('#input-canvas-height');
     if (widthInput && heightInput) {
@@ -493,6 +496,7 @@ function startNewDrawing(type = 'canvas') {
         heightInput.value = 600;
     }
     resizeOffscreenCanvases();
+    syncDeformSlidersFromState();
 
     const layerId = generateId('l');
     state.shapes[layerId] = {

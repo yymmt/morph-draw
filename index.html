@@ -166,7 +166,12 @@
                     <!-- Common Settings Tab -->
                     <div class="settings-tab-content" id="tab-common">
                         <div class="settings-group">
-                            <p class="settings-placeholder">共通設定項目（拡張予定）</p>
+                            <label class="settings-label" for="slider-sigma-center">下書き端での減衰 (sigmaCenter): <span id="val-sigma-center" style="color: #2196F3; font-weight: bold;">120</span></label>
+                            <input id="slider-sigma-center" type="range" min="10" max="300" step="5" value="120" style="width: 100%;">
+                        </div>
+                        <div class="settings-group">
+                            <label class="settings-label" for="slider-sigma-dist">距離による反応限界 (sigmaDist): <span id="val-sigma-dist" style="color: #2196F3; font-weight: bold;">1000</span></label>
+                            <input id="slider-sigma-dist" type="range" min="100" max="3000" step="50" value="1000" style="width: 100%;">
                         </div>
                     </div>
                 </div>
@@ -185,6 +190,9 @@
                 </div>
                 <div id="pattern-guide" class="hidden">
                     <span>【パターン角編集】 t+左右ドラッグ:ターゲット移動（角の自動選択） | Shift+t+左右ドラッグ:選択中の角のパラメータ調整 | Shift+p:終了</span>
+                </div>
+                <div id="deform-guide" class="hidden">
+                    <span>【変形編集】 k+左右ドラッグ: 変形強度調整 (アンカーポラインへ引き寄せ)</span>
                 </div>
                 <div id="search-bar" class="hidden">
                     <span class="search-prefix">/</span>

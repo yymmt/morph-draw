@@ -174,6 +174,32 @@ function initEvents() {
         };
     }
 
+    const centerSlider = getDom('#slider-sigma-center');
+    if (centerSlider) {
+        centerSlider.oninput = (e) => {
+            const val = parseInt((e.target as HTMLInputElement).value, 10);
+            state.deformSettings.sigmaCenter = val;
+            const label = getDom('#val-sigma-center');
+            if (label) label.textContent = String(val);
+        };
+        centerSlider.onchange = () => {
+            saveDrawing();
+        };
+    }
+
+    const distSlider = getDom('#slider-sigma-dist');
+    if (distSlider) {
+        distSlider.oninput = (e) => {
+            const val = parseInt((e.target as HTMLInputElement).value, 10);
+            state.deformSettings.sigmaDist = val;
+            const label = getDom('#val-sigma-dist');
+            if (label) label.textContent = String(val);
+        };
+        distSlider.onchange = () => {
+            saveDrawing();
+        };
+    }
+
     getDom('#btn-add-layer').onclick = () => {
         addLayer();
     };

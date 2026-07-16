@@ -2339,8 +2339,8 @@ function getExtendedPolyline(pointsB) {
 function deformPolyline(pointsA, pointsB, k) {
     const fullB = getExtendedPolyline(pointsB);
     const centerB = pointsB[Math.floor(pointsB.length / 2)] || { x: 0, y: 0 };
-    const sigmaCenter = 120;
-    const sigmaDist = 1000;
+    const sigmaCenter = state.deformSettings.sigmaCenter;
+    const sigmaDist = state.deformSettings.sigmaDist;
 
     const Sb = fullB[0];
     const Eb = fullB[fullB.length - 1];
@@ -2388,6 +2388,23 @@ function deformPolyline(pointsA, pointsB, k) {
         };
     });
 }
+
+function syncDeformSlidersFromState() {
+    const centerSlider = getDom('#slider-sigma-center') as HTMLInputElement;
+    const centerLabel = getDom('#val-sigma-center');
+    if (centerSlider && state.deformSettings) {
+        centerSlider.value = String(state.deformSettings.sigmaCenter);
+        if (centerLabel) centerLabel.textContent = String(state.deformSettings.sigmaCenter);
+    }
+
+    const distSlider = getDom('#slider-sigma-dist') as HTMLInputElement;
+    const distLabel = getDom('#val-sigma-dist');
+    if (distSlider && state.deformSettings) {
+        distSlider.value = String(state.deformSettings.sigmaDist);
+        if (distLabel) distLabel.textContent = String(state.deformSettings.sigmaDist);
+    }
+}
+
 
 function handlePolylineDeform() {
     if (state.anchoredShapeIds.length !== 1) return;
@@ -2456,6 +2473,7 @@ function handlePolylineDeform() {
 (window as any).createWrap = createWrap;
 (window as any).updateSelectionByDragRect = updateSelectionByDragRect;
 (window as any).handlePolylineDeform = handlePolylineDeform;
+(window as any).syncDeformSlidersFromState = syncDeformSlidersFromState;
 
 
 export {};

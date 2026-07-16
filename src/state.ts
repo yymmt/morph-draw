@@ -54,6 +54,10 @@ const state = {
     draftStrokes: [],
     currentDraftStroke: null,
     deformStartPoints: null,
+    deformSettings: {
+        sigmaCenter: 120,
+        sigmaDist: 1000
+    },
     input: {
         keys: {},
         pointerOnSVG: { x: 0, y: 0 },
@@ -99,6 +103,7 @@ const state = {
         state.currentDraftStroke = null;
         state.deformStartPoints = null;
         state.input.dragStart = null;
+        state.deformSettings = data.deformSettings || { sigmaCenter: 120, sigmaDist: 1000 };
     }
 };
 
@@ -110,7 +115,6 @@ const state = {
  */
 const keyHandlers = {
     no_mod: {
-        /*
         x: {
             keydown: [
                 {
@@ -137,7 +141,6 @@ const keyHandlers = {
                 }
             ]
         },
-        */
         c: { keydown: { f: (ctx) => handleAddCircleStart(ctx), needsRender: true } },
         w: {
             keydown: [
@@ -280,6 +283,9 @@ const interactionMap = {
             },
             k: {
                 keydown: () => {
+                    const guide = getDom('#deform-guide');
+                    if (guide) guide.classList.remove('hidden');
+
                     if (state.anchoredShapeIds.length !== 1) return;
                     const anchorId = state.anchoredShapeIds[0];
                     const anchorShape = state.shapes[anchorId];
@@ -293,6 +299,10 @@ const interactionMap = {
                         }
                     });
                     state.input.dragStart = { x: state.input.pointer.x, y: state.input.pointer.y };
+                },
+                keyup: () => {
+                    const guide = getDom('#deform-guide');
+                    if (guide) guide.classList.add('hidden');
                 },
                 f: () => handlePolylineDeform(),
                 needsRender: true,
