@@ -56,7 +56,8 @@ const state = {
     deformStartPoints: null,
     deformSettings: {
         sigmaCenter: 120,
-        sigmaDist: 1000
+        sigmaDist: 1000,
+        deformDecayMode: 'projection'
     },
     nextIdCounter: 1,
     patternWebGLCanvas: null,
@@ -105,7 +106,7 @@ const state = {
         state.currentDraftStroke = null;
         state.deformStartPoints = null;
         state.input.dragStart = null;
-        state.deformSettings = data.deformSettings || { sigmaCenter: 120, sigmaDist: 1000 };
+        state.deformSettings = data.deformSettings || { sigmaCenter: 120, sigmaDist: 1000, deformDecayMode: 'projection' };
     }
 } as any;
 

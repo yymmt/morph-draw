@@ -200,6 +200,14 @@ function initEvents() {
         };
     }
 
+    const decayRadios = document.getElementsByName('deform-decay-mode');
+    decayRadios.forEach(radio => {
+        radio.onchange = (e) => {
+            state.deformSettings.deformDecayMode = (e.target as any).value;
+            saveDrawing();
+        };
+    });
+
     getDom('#btn-add-layer').onclick = () => {
         addLayer();
     };

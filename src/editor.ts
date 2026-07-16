@@ -2431,7 +2431,12 @@ function deformPolyline(pointsA, pointsB, k) {
         const minDist = Math.hypot(pa.x - closestPb.x, pa.y - closestPb.y);
 
         // (b) 影響度（ウェイト）の計算
-        const distFromCenterB = Math.hypot(closestPb.x - centerB.x, closestPb.y - centerB.y);
+        let distFromCenterB = 0;
+        if (state.deformSettings && state.deformSettings.deformDecayMode === 'distance') {
+            distFromCenterB = Math.hypot(pa.x - centerB.x, pa.y - centerB.y);
+        } else {
+            distFromCenterB = Math.hypot(closestPb.x - centerB.x, closestPb.y - centerB.y);
+        }
         const wCenter = Math.exp(-(distFromCenterB * distFromCenterB) / (2 * sigmaCenter * sigmaCenter));
         const wDist = Math.exp(-(minDist * minDist) / (2 * sigmaDist * sigmaDist));
         const weight = wCenter * wDist;
@@ -2460,6 +2465,13 @@ function syncDeformSlidersFromState() {
     if (distSlider && state.deformSettings) {
         distSlider.value = String(state.deformSettings.sigmaDist);
         if (distLabel) distLabel.textContent = String(state.deformSettings.sigmaDist);
+    }
+
+    if (state.deformSettings && state.deformSettings.deformDecayMode) {
+        const radios = document.getElementsByName('deform-decay-mode');
+        radios.forEach(radio => {
+            (radio as any).checked = ((radio as any).value === state.deformSettings.deformDecayMode);
+        });
     }
 }
 
