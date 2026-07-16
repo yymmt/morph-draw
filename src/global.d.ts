@@ -36,6 +36,10 @@ declare global {
         getDom: (pat: string) => any;
         getDoms: (pat: string) => any[];
         getDomsOf: (root: any, pat: string) => any[];
+        getDomOf: (root: any, pat: string) => any;
+        addClassDom: (pat: string, className: string) => void;
+        removeClassDom: (pat: string, className: string) => void;
+        toggleClassDom: (pat: string, className: string) => boolean;
         newElm: (tag: string, attrs?: any) => any;
         getMainCanvasSVGVector: () => any;
         getMainCanvasSVGPoint: () => any;
@@ -90,6 +94,17 @@ declare global {
         handlePolylineDeform: () => void;
         syncDeformSlidersFromState: () => void;
         handleDDist: (ctx: any) => void;
+        generateId: (prefix: string) => string;
+        initPatternCorners: (shape: any) => void;
+        loadDrawingTexture: (id: string) => any;
+        getShapePoint: (shape: any, t: number) => { x: number, y: number };
+        handleTSlide: (ctx: any) => void;
+        handleTSlideThickness: (ctx: any) => void;
+        handleWSlideThickness: (ctx: any) => void;
+        handleTMoveThickness: (ctx: any) => void;
+        handleTSlidePattern: (ctx: any) => void;
+        handleTMovePattern: (ctx: any) => void;
+        stateReplacer: (key: string, value: any) => any;
     }
 
     const state: any;
@@ -97,7 +112,7 @@ declare global {
     const interactionMap: any;
     const modeHandlers: any;
     const MDMath: any;
-    const db: any;
+    let db: any;
     const history: any;
     const renderCanvas: () => void;
     const clearAllCaches: () => void;
@@ -128,7 +143,12 @@ declare global {
     const getDom: (pat: string) => any;
     const getDoms: (pat: string) => any[];
     const getDomsOf: (root: any, pat: string) => any[];
+    const getDomOf: (root: any, pat: string) => any;
+    const addClassDom: (pat: string, className: string) => void;
+    const removeClassDom: (pat: string, className: string) => void;
+    const toggleClassDom: (pat: string, className: string) => boolean;
     const newElm: (tag: string, attrs?: any) => any;
+    const initializeIdCounter: () => void;
     const getMainCanvasSVGVector: () => any;
     const getMainCanvasSVGPoint: () => any;
     const getModifierState: (e: any) => string;
@@ -182,6 +202,17 @@ declare global {
     const handlePolylineDeform: () => void;
     const syncDeformSlidersFromState: () => void;
     const handleDDist: (ctx: any) => void;
+    const generateId: (prefix: string) => string;
+    const initPatternCorners: (shape: any) => void;
+    const loadDrawingTexture: (id: string) => any;
+    const getShapePoint: (shape: any, t: number) => { x: number, y: number };
+    const handleTSlide: (ctx: any) => void;
+    const handleTSlideThickness: (ctx: any) => void;
+    const handleWSlideThickness: (ctx: any) => void;
+    const handleTMoveThickness: (ctx: any) => void;
+    const handleTSlidePattern: (ctx: any) => void;
+    const handleTMovePattern: (ctx: any) => void;
+    const stateReplacer: (key: string, value: any) => any;
 }
 
 export {};

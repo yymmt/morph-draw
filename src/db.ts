@@ -105,13 +105,13 @@ function loadDrawingTexture(id) {
 function initDB() {
     const request = indexedDB.open('morph-draw-db', 1);
     request.onupgradeneeded = (e) => {
-        const dbInstance = e.target.result;
+        const dbInstance = (e.target as any).result;
         if (!dbInstance.objectStoreNames.contains('drawings')) {
             dbInstance.createObjectStore('drawings', { keyPath: 'id' });
         }
     };
     request.onsuccess = (e) => { 
-        db = e.target.result; 
+        db = (e.target as any).result; 
         loadGallery(); 
     };
 }
@@ -334,11 +334,12 @@ function openDrawing(id) {
 
         state.selectedLayerId = state.scene[0];
 
-        const textureIdsToLoad = new Set();
+        const textureIdsToLoad = new Set() as any;
         Object.values(state.shapes).forEach(shape => {
-            if (shape && shape.style) {
-                if (shape.style.fillPattern) textureIdsToLoad.add(shape.style.fillPattern);
-                if (shape.style.strokePattern) textureIdsToLoad.add(shape.style.strokePattern);
+            const s = shape as any;
+            if (s && s.style) {
+                if (s.style.fillPattern) textureIdsToLoad.add(s.style.fillPattern);
+                if (s.style.strokePattern) textureIdsToLoad.add(s.style.strokePattern);
             }
         });
 
@@ -360,15 +361,16 @@ function openDrawing(id) {
  */
 function migrateDrawingData(shapes) {
     Object.values(shapes).forEach(shape => {
-        if (shape && shape.type === 'bezier-group') {
-            if (shape.style) {
-                if (shape.style.outline === undefined) shape.style.outline = true;
-                if (shape.style.fillEnabled === undefined) shape.style.fillEnabled = true;
+        const s = shape as any;
+        if (s && s.type === 'bezier-group') {
+            if (s.style) {
+                if (s.style.outline === undefined) s.style.outline = true;
+                if (s.style.fillEnabled === undefined) s.style.fillEnabled = true;
             } else {
-                shape.style = { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true };
+                s.style = { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true };
             }
-            if (!shape.strokeWidthData) {
-                shape.strokeWidthData = [{ t: 0, w: 10 }, { t: 1, w: 10 }];
+            if (!s.strokeWidthData) {
+                s.strokeWidthData = [{ t: 0, w: 10 }, { t: 1, w: 10 }];
             }
         }
     });
@@ -401,7 +403,7 @@ function resizeImageToBlob(file, maxWidth, maxHeight) {
                 }, 'image/png');
             };
             img.onerror = () => resolve(null);
-            img.src = event.target.result;
+            img.src = (event.target as any).result;
         };
         reader.onerror = () => resolve(null);
         reader.readAsDataURL(file);
@@ -430,7 +432,7 @@ function importImageFile() {
             i.onload = () => resolve(i);
             i.onerror = () => resolve(null);
             i.src = URL.createObjectURL(file);
-        });
+        }) as any;
 
         const width = img ? img.width : 800;
         const height = img ? img.height : 600;

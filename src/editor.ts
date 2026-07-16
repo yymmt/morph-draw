@@ -43,8 +43,8 @@ function handleCopy(ctx) {
     const shapeIds = Array.from(new Set([...state.selectedShapeIds, ...(state.anchoredShapeIds || [])]));
     if (shapeIds.length === 0) return;
 
-    const candidateShapeIds = new Set();
-    const candidateBezierIds = new Set();
+    const candidateShapeIds = new Set() as any;
+    const candidateBezierIds = new Set() as any;
 
     shapeIds.forEach(sid => {
         const shape = state.shapes[sid];
@@ -56,7 +56,7 @@ function handleCopy(ctx) {
         }
     });
 
-    const invalidBezierIds = new Set();
+    const invalidBezierIds = new Set() as any;
     candidateBezierIds.forEach(bid => {
         const bez = state.beziers[bid];
         if (bez && bez.generator && bez.generator.type === 'connector') {
@@ -68,7 +68,7 @@ function handleCopy(ctx) {
     });
 
     const validShapeIds = [];
-    const validBezierIds = new Set();
+    const validBezierIds = new Set() as any;
 
     candidateShapeIds.forEach(sid => {
         const shape = state.shapes[sid];
@@ -1005,7 +1005,7 @@ function switchSettingsTab(tabName) {
  * @returns {Object|null} Nearest vertex record details or null.
  */
 function findClosestSamplePoint(pt) {
-    const visibleShapeIds = new Set();
+    const visibleShapeIds = new Set() as any;
     state.scene.forEach(layerId => {
         const layer = state.shapes[layerId];
         if (layer && layer.type === 'layer' && layer.visible !== false) {
@@ -1290,7 +1290,7 @@ function resolveBezierDependencies() {
         }
     });
 
-    const visited = new Set(), visiting = new Set(), sorted = [];
+    const visited = new Set() as any, visiting = new Set() as any, sorted = [] as any;
     const visit = (id) => {
         if (visited.has(id)) return;
         if (visiting.has(id)) return;
@@ -1421,7 +1421,7 @@ function addShapeAt(type, x, y) {
  * Automatically creates wrap boundary shapes connecting multiple anchored or selected items.
  */
 function createWrap() {
-    const targets = Array.from(new Set([...state.anchoredShapeIds, ...state.selectedShapeIds]));
+    const targets = Array.from(new Set([...state.anchoredShapeIds, ...state.selectedShapeIds]) as any);
     if (targets.length < 2) {
         return;
     }
@@ -1947,7 +1947,7 @@ function handleConvertRasterToPolyline(ctx) {
         }
 
         const id = generateId('s');
-        const shapeName = `polyline ${Object.values(state.shapes).filter(s => s.type === 'polyline').length + 1}`;
+        const shapeName = `polyline ${Object.values(state.shapes as any).filter(s => (s as any).type === 'polyline').length + 1}`;
         const shape = {
             id,
             type: 'polyline',
@@ -2026,7 +2026,7 @@ function updateSelectionByDragRect() {
             for (const bid of shape.bezierIds) {
                 const bez = state.beziers[bid];
                 if (bez && bez.samplePointByT) {
-                    for (const p of Object.values(bez.samplePointByT)) {
+                    for (const p of Object.values(bez.samplePointByT as any)) {
                         if (p.x >= xMin && p.x <= xMax && p.y >= yMin && p.y <= yMax) {
                             overlaps = true;
                             break;

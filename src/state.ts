@@ -11,8 +11,8 @@ const state = {
     view: 'gallery',
     currentDrawId: null,
     drawingType: 'canvas', // 'canvas' | 'pattern' | 'import_image'
-    shapes: {}, // ID -> Shape
-    beziers: {},  // ID -> Bezier
+    shapes: {} as any, // ID -> Shape
+    beziers: {} as any,  // ID -> Bezier
     scene: [],    // Root level IDs
     zoom: 1,
     rotation: 0,
@@ -58,6 +58,8 @@ const state = {
         sigmaCenter: 120,
         sigmaDist: 1000
     },
+    nextIdCounter: 1,
+    patternWebGLCanvas: null,
     input: {
         keys: {},
         pointerOnSVG: { x: 0, y: 0 },
@@ -105,7 +107,7 @@ const state = {
         state.input.dragStart = null;
         state.deformSettings = data.deformSettings || { sigmaCenter: 120, sigmaDist: 1000 };
     }
-};
+} as any;
 
 /**
  * Key event handlers mapping modifier key state and key codes to action functions.
@@ -351,35 +353,10 @@ const interactionMap = {
 /** @type {IDBDatabase} */
 let db;
 
-/**
- * Selects all child DOM elements under root element matching a selector.
- * @param {Element} elm - The root element to search within.
- * @param {string} pat - CSS Selector pattern.
- * @returns {Array<Element>}
- */
-const getDomsOf = (elm, pat) => Array.from(elm.querySelectorAll(pat));
-
-/**
- * Selects first child DOM element under root element matching a selector.
- * @param {Element} elm - The root element to search within.
- * @param {string} pat - CSS Selector pattern.
- * @returns {Element|undefined}
- */
-const getDomOf = (elm, pat) => getDomsOf(elm, pat)[0];
-
-/**
- * Selects all DOM elements matching a selector.
- * @param {string} pat - CSS Selector pattern.
- * @returns {Array<Element>}
- */
-const getDoms = (pat) => getDomsOf(document, pat);
-
-/**
- * Selects first DOM element matching a selector.
- * @param {string} pat - CSS Selector pattern.
- * @returns {Element|undefined}
- */
-const getDom = (pat) => getDomsOf(document, pat)[0];
+const getDomsOf = (elm, pat) => Array.from(elm.querySelectorAll(pat)) as any;
+const getDomOf = (elm, pat) => getDomsOf(elm, pat)[0] as any;
+const getDoms = (pat) => getDomsOf(document, pat) as any;
+const getDom = (pat) => getDomsOf(document, pat)[0] as any;
 
 /**
  * Toggles a class on the matched DOM element.
