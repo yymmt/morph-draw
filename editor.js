@@ -914,6 +914,13 @@ async function handleInputUpdate(event) {
             state.pushHistoryOnKeyUp = false;
             pushHistory();
         }
+        if (key.toLowerCase() === 'x') {
+            if (state.currentDraftStroke && state.currentDraftStroke.length > 2) {
+                if (!state.draftStrokes) state.draftStrokes = [];
+                state.draftStrokes.push(state.currentDraftStroke);
+            }
+            state.currentDraftStroke = null;
+        }
     }
 
     if (interaction && typeof interaction.f === 'function') {
@@ -1883,4 +1890,333 @@ function applySearchResult() {
         state.selectedShapeIds = [current.id];
     }
     renderCanvas();
+}
+
+/**
+ * Handles converting the raw draft strokes on the canvas into structural polyline shapes when pressing 'p'.
+ * @param {Object} ctx - Event context.
+ */
+function handleConvertRasterToPolyline(ctx) {
+    if (!state.draftStrokes || state.draftStrokes.length === 0) {
+        if (state.currentDraftStroke && state.currentDraftStroke.length > 2) {
+            if (!state.draftStrokes) state.draftStrokes = [];
+            state.draftStrokes.push(state.currentDraftStroke);
+            state.currentDraftStroke = null;
+        }
+    }
+    if (!state.draftStrokes || state.draftStrokes.length === 0) return;
+
+    let splitSegments = [];
+    state.draftStrokes.forEach(stroke => {
+        const segs = splitStrokeByCorners(stroke);
+        splitSegments.push(...segs);
+    });
+
+    const groups = groupSegments(splitSegments, 35, 45);
+
+    let count = 0;
+
+    groups.forEach(group => {
+        let avgPath = averageSegmentGroup(group);
+        if (avgPath.length < 2) return;
+
+        const startPt = avgPath[0];
+        const endPt = avgPath[avgPath.length - 1];
+        const gap = Math.hypot(startPt.x - endPt.x, startPt.y - endPt.y);
+        const isClosed = gap < 45 && avgPath.length > 8;
+
+        if (isClosed) {
+            avgPath.push({ x: startPt.x, y: startPt.y });
+        }
+
+        const id = generateId('s');
+        const shapeName = `polyline ${Object.values(state.shapes).filter(s => s.type === 'polyline').length + 1}`;
+        const shape = {
+            id,
+            type: 'polyline',
+            name: shapeName,
+            points: avgPath,
+            isClosed: isClosed,
+            style: {
+                fill: '#10b981',
+                opacity: 0.7,
+                outline: true,
+                fillEnabled: isClosed
+            },
+            childIds: []
+        };
+
+        state.shapes[id] = shape;
+
+        if (state.selectedLayerId && state.shapes[state.selectedLayerId]) {
+            state.shapes[state.selectedLayerId].childIds.push(id);
+        } else {
+            const firstLayerId = state.scene[0];
+            if (firstLayerId && state.shapes[firstLayerId]) {
+                state.shapes[firstLayerId].childIds.push(id);
+            }
+        }
+        count++;
+    });
+
+    if (count > 0) {
+        console.log("変換しました");
+    }
+
+    state.draftStrokes = [];
+    state.currentDraftStroke = null;
+
+    if (state.canvas.draftOffscreen) {
+        const draftCtx = state.canvas.draftOffscreen.getContext('2d');
+        draftCtx.clearRect(0, 0, state.canvas.width, state.canvas.height);
+    }
+}
+
+/**
+ * Splits a stroke into segments at sharp curvature points.
+ * @param {Array<{x:number, y:number}>} stroke - Sequence of points.
+ * @returns {Array<Array<{x:number, y:number}>>}
+ */
+function splitStrokeByCorners(stroke) {
+    if (stroke.length < 6) return [stroke];
+    const segments = [];
+    let currentSegment = [stroke[0], stroke[1]];
+
+    const lookAhead = 3;
+    for (let i = 2; i < stroke.length - lookAhead; i++) {
+        const dx1 = stroke[i].x - stroke[i-2].x;
+        const dy1 = stroke[i].y - stroke[i-2].y;
+        const len1 = Math.hypot(dx1, dy1);
+
+        const dx2 = stroke[i+lookAhead].x - stroke[i].x;
+        const dy2 = stroke[i+lookAhead].y - stroke[i].y;
+        const len2 = Math.hypot(dx2, dy2);
+
+        if (len1 > 1.5 && len2 > 1.5) {
+            const cosTheta = (dx1 * dx2 + dy1 * dy2) / (len1 * len2);
+            if (cosTheta < 0.6) {
+                currentSegment.push(stroke[i]);
+                segments.push(currentSegment);
+                currentSegment = [stroke[i]];
+                i += lookAhead;
+            }
+        }
+        currentSegment.push(stroke[i]);
+    }
+    for (let i = stroke.length - lookAhead; i < stroke.length; i++) {
+        if (i >= 0 && !currentSegment.includes(stroke[i])) {
+            currentSegment.push(stroke[i]);
+        }
+    }
+    if (currentSegment.length > 1) {
+        segments.push(currentSegment);
+    }
+    return segments.filter(s => s.length >= 2);
+}
+
+/**
+ * Calculates the minimum distance between two segments.
+ * @param {Array<{x:number, y:number}>} seg1 - First segment.
+ * @param {Array<{x:number, y:number}>} seg2 - Second segment.
+ * @returns {number}
+ */
+function getMinDistanceBetweenSegments(seg1, seg2) {
+    let minDist = Infinity;
+    const step1 = Math.max(1, Math.floor(seg1.length / 8));
+    const step2 = Math.max(1, Math.floor(seg2.length / 8));
+    for (let i = 0; i < seg1.length; i += step1) {
+        for (let j = 0; j < seg2.length; j += step2) {
+            const dist = Math.hypot(seg1[i].x - seg2[j].x, seg1[i].y - seg2[j].y);
+            if (dist < minDist) minDist = dist;
+        }
+    }
+    return minDist;
+}
+
+/**
+ * Gets the unit direction vector and length of a segment.
+ * @param {Array<{x:number, y:number}>} seg - Path segment.
+ * @returns {{x:number, y:number, len:number}}
+ */
+function getSegmentDirection(seg) {
+    const dx = seg[seg.length - 1].x - seg[0].x;
+    const dy = seg[seg.length - 1].y - seg[0].y;
+    const len = Math.hypot(dx, dy);
+    return len > 0 ? { x: dx / len, y: dy / len, len } : { x: 0, y: 0, len: 0 };
+}
+
+/**
+ * Groups close and parallel stroke segments.
+ * @param {Array<Array<{x:number, y:number}>>} segments - List of segments.
+ * @param {number} distThresh - Distance threshold.
+ * @param {number} maxAngleDiffDeg - Max angle threshold in degrees.
+ * @returns {Array<Array<Array<{x:number, y:number}>>>}
+ */
+function groupSegments(segments, distThresh, maxAngleDiffDeg) {
+    let groups = segments.map(s => [s]);
+    let merged = true;
+
+    const cosAngleThresh = Math.cos(maxAngleDiffDeg * Math.PI / 180);
+
+    while (merged) {
+        merged = false;
+        for (let i = 0; i < groups.length; i++) {
+            for (let j = i + 1; j < groups.length; j++) {
+                let shouldMerge = false;
+
+                for (let seg1 of groups[i]) {
+                    for (let seg2 of groups[j]) {
+                        if (getMinDistanceBetweenSegments(seg1, seg2) < distThresh) {
+                            const dir1 = getSegmentDirection(seg1);
+                            const dir2 = getSegmentDirection(seg2);
+
+                            if (dir1.len < 10 || dir2.len < 10) {
+                                shouldMerge = true;
+                                break;
+                            }
+
+                            const dotProduct = Math.abs(dir1.x * dir2.x + dir1.y * dir2.y);
+                            if (dotProduct >= cosAngleThresh) {
+                                shouldMerge = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (shouldMerge) break;
+                }
+
+                if (shouldMerge) {
+                    groups[i].push(...groups[j]);
+                    groups.splice(j, 1);
+                    merged = true;
+                    break;
+                }
+            }
+            if (merged) break;
+        }
+    }
+    return groups;
+}
+
+/**
+ * Resamples a path to a target number of points.
+ * @param {Array<{x:number, y:number}>} path - Path to resample.
+ * @param {number} targetN - Target number of points.
+ * @returns {Array<{x:number, y:number}>}
+ */
+function resamplePath(path, targetN) {
+    if (path.length === 0) return [];
+    if (path.length === 1) {
+        const pts = [];
+        for (let i = 0; i < targetN; i++) pts.push({ ...path[0] });
+        return pts;
+    }
+
+    const dists = [0];
+    for (let i = 1; i < path.length; i++) {
+        dists.push(dists[i-1] + Math.hypot(path[i].x - path[i-1].x, path[i].y - path[i-1].y));
+    }
+    const totalLen = dists[dists.length - 1];
+
+    const resampled = [];
+    for (let i = 0; i < targetN; i++) {
+        const t = i / (targetN - 1);
+        const targetDist = t * totalLen;
+
+        let idx = 0;
+        while (idx < dists.length - 2 && dists[idx + 1] < targetDist) {
+            idx++;
+        }
+
+        const d0 = dists[idx];
+        const d1 = dists[idx + 1];
+        const frac = (d1 - d0) > 0.001 ? (targetDist - d0) / (d1 - d0) : 0;
+
+        const p0 = path[idx];
+        const p1 = path[idx + 1];
+
+        resampled.push({
+            x: p0.x * (1 - frac) + p1.x * frac,
+            y: p0.y * (1 - frac) + p1.y * frac
+        });
+    }
+    return resampled;
+}
+
+/**
+ * Averages a group of stroke segments using arc-length resampling.
+ * @param {Array<Array<{x:number, y:number}>>} group - Group of segments.
+ * @returns {Array<{x:number, y:number}>}
+ */
+function averageSegmentGroup(group) {
+    if (group.length === 1) return smoothPath(group[0], 2);
+
+    let refSeg = group[0];
+    let maxLen = 0;
+    const getPathLength = (path) => {
+        let len = 0;
+        for (let i = 1; i < path.length; i++) {
+            len += Math.hypot(path[i].x - path[i-1].x, path[i].y - path[i-1].y);
+        }
+        return len;
+    };
+
+    group.forEach(seg => {
+        const len = getPathLength(seg);
+        if (len > maxLen) {
+            maxLen = len;
+            refSeg = seg;
+        }
+    });
+
+    const N = Math.max(10, refSeg.length);
+    const resampledGroup = [];
+    const refDir = getSegmentDirection(refSeg);
+
+    group.forEach(seg => {
+        const segDir = getSegmentDirection(seg);
+        let finalSeg = [...seg];
+
+        if (refDir.x * segDir.x + refDir.y * segDir.y < 0) {
+            finalSeg.reverse();
+        }
+        resampledGroup.push(resamplePath(finalSeg, N));
+    });
+
+    const averaged = [];
+    for (let i = 0; i < N; i++) {
+        let sumX = 0;
+        let sumY = 0;
+        resampledGroup.forEach(rSeg => {
+            sumX += rSeg[i].x;
+            sumY += rSeg[i].y;
+        });
+        averaged.push({ x: sumX / resampledGroup.length, y: sumY / resampledGroup.length });
+    }
+
+    return smoothPath(averaged, 3);
+}
+
+/**
+ * Applies Laplacian smoothing to a path.
+ * @param {Array<{x:number, y:number}>} path - Path to smooth.
+ * @param {number} [iterations=2] - Number of smoothing iterations.
+ * @returns {Array<{x:number, y:number}>}
+ */
+function smoothPath(path, iterations = 2) {
+    if (path.length < 3) return path;
+    let pts = [...path];
+    for (let iter = 0; iter < iterations; iter++) {
+        const nextPts = [];
+        nextPts.push(pts[0]);
+        for (let i = 1; i < pts.length - 1; i++) {
+            nextPts.push({
+                x: pts[i].x * 0.65 + (pts[i-1].x + pts[i+1].x) * 0.175,
+                y: pts[i].y * 0.65 + (pts[i-1].y + pts[i+1].y) * 0.175
+            });
+        }
+        nextPts.push(pts[pts.length - 1]);
+        pts = nextPts;
+    }
+    return pts;
 }

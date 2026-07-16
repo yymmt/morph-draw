@@ -51,6 +51,8 @@ const state = {
     command: {
         active: false
     },
+    draftStrokes: [],
+    currentDraftStroke: null,
     input: {
         keys: {},
         pointerOnSVG: { x: 0, y: 0 },
@@ -91,6 +93,8 @@ const state = {
         state.history = [];
         state.historyIndex = -1;
         state.drawingType = 'canvas';
+        state.draftStrokes = [];
+        state.currentDraftStroke = null;
     }
 };
 
@@ -161,6 +165,13 @@ const keyHandlers = {
         Escape: { keydown: { f: (ctx) => handleClearVertexFocus(ctx), needsRender: true } },
         a: { keydown: { f: (ctx) => handleToggleAnchor(ctx) } },
         Enter: { keydown: { f: (ctx) => handleEnterAction(ctx) } },
+        p: {
+            keydown: {
+                f: (ctx) => handleConvertRasterToPolyline(ctx),
+                needsRender: true,
+                pushHistory: true
+            }
+        },
 
         t: {
             keydown: { f: (ctx) => handleTransformStart(ctx), needsRender: true },
@@ -239,15 +250,23 @@ const interactionMap = {
             s: { f: () => handleScale(), needsRender: true, pushHistoryOnKeyUp: true },
             x: {
                 f: () => {
-                    const draftCtx = state.canvas.draftOffscreen.getContext('2d');
                     const curr = state.input.pointerOnSVG;
                     const d = getMainCanvasSVGVector();
-                    draftCtx.beginPath();
-                    draftCtx.moveTo(curr.x - d.dx, curr.y - d.dy);
-                    draftCtx.lineTo(curr.x, curr.y);
-                    draftCtx.strokeStyle = '#000000';
-                    draftCtx.lineWidth = 1;
-                    draftCtx.stroke();
+
+                    if (!state.currentDraftStroke) {
+                        state.currentDraftStroke = [];
+                    }
+                    state.currentDraftStroke.push({ x: curr.x, y: curr.y });
+
+                    if (state.canvas.draftOffscreen) {
+                        const draftCtx = state.canvas.draftOffscreen.getContext('2d');
+                        draftCtx.beginPath();
+                        draftCtx.moveTo(curr.x - d.dx, curr.y - d.dy);
+                        draftCtx.lineTo(curr.x, curr.y);
+                        draftCtx.strokeStyle = '#000000';
+                        draftCtx.lineWidth = 1;
+                        draftCtx.stroke();
+                    }
                 },
                 needsRender: true
             },
