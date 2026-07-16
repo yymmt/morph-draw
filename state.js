@@ -100,6 +100,8 @@ const state = {
 
 /**
  * Key event handlers mapping modifier key state and key codes to action functions.
+ * NOTE: Prefer migrating new and existing keyboard actions into interactionMap
+ * to centralize interaction definitions and keep the event dispatcher clean.
  * @type {Object}
  */
 const keyHandlers = {

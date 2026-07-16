@@ -870,6 +870,8 @@ async function handleInputUpdate_old(event, detail, rawEvent) {
 
 /**
  * Core event action dispatcher updating system configurations on interactions.
+ * NOTE: Do NOT write business or drawing logic directly inside this function.
+ * All logic must be delegated to interactionMap functions (e.g. config.f or config.keyup).
  * @param {Event} event - Raw pointer, key or wheel event.
  */
 async function handleInputUpdate(event) {
