@@ -1935,6 +1935,7 @@ function handleConvertRasterToPolyline(ctx) {
     groups.forEach(group => {
         let avgPath = averageSegmentGroup(group);
         if (avgPath.length < 2) return;
+        avgPath = resamplePathBySpacing(avgPath, 5);
 
         const startPt = avgPath[0];
         const endPt = avgPath[avgPath.length - 1];
@@ -2294,6 +2295,50 @@ function smoothPath(path, iterations = 2) {
     return pts;
 }
 
+/**
+ * Resamples a path so that points are spaced by a target distance.
+ * @param {Array<{x:number, y:number}>} points - Path points.
+ * @param {number} spacing - Target distance between points.
+ * @returns {Array<{x:number, y:number}>}
+ */
+function resamplePathBySpacing(points, spacing) {
+    if (points.length < 2) return points;
+    const res = [points[0]];
+    let prev = points[0];
+    let carry = 0;
+
+    for (let i = 1; i < points.length; i++) {
+        const curr = points[i];
+        const d = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+        if (d === 0) continue;
+        
+        let distLeft = d + carry;
+        let p = prev;
+        const dx = (curr.x - prev.x) / d;
+        const dy = (curr.y - prev.y) / d;
+
+        while (distLeft >= spacing) {
+            const nextPt = {
+                x: p.x + dx * (spacing - carry),
+                y: p.y + dy * (spacing - carry)
+            };
+            res.push(nextPt);
+            p = nextPt;
+            distLeft -= spacing;
+            carry = 0;
+        }
+        carry = distLeft;
+        prev = curr;
+    }
+    
+    const last = points[points.length - 1];
+    const distToLast = Math.hypot(res[res.length - 1].x - last.x, res[res.length - 1].y - last.y);
+    if (distToLast > spacing * 0.3) {
+        res.push(last);
+    }
+    return res;
+}
+
 function getExtendedPolyline(pointsB) {
     if (pointsB.length < 2) return pointsB.map(p => ({ ...p, isExtended: false }));
     const extLength = 15;
@@ -2339,7 +2384,19 @@ function getExtendedPolyline(pointsB) {
 
 function deformPolyline(pointsA, pointsB, k) {
     const fullB = getExtendedPolyline(pointsB);
-    const centerB = pointsB[Math.floor(pointsB.length / 2)] || { x: 0, y: 0 };
+    
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    pointsB.forEach(p => {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+    });
+    const centerB = {
+        x: (minX + maxX) / 2,
+        y: (minY + maxY) / 2
+    };
     const sigmaCenter = state.deformSettings.sigmaCenter;
     const sigmaDist = state.deformSettings.sigmaDist;
 
