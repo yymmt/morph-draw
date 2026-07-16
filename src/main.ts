@@ -54,6 +54,7 @@ function initEvents() {
         state.input.isPointerDown = true;
         state.input.dragStartOnSVG = startPt;
         handleInputUpdate_old('pointerdown');
+        handleInputUpdate(e);
     });
 
     window.addEventListener('wheel', (event) => {
@@ -69,6 +70,7 @@ function initEvents() {
             const pt = getMainCanvasSVGPoint();
             state.input.dragStartOnSVG = pt;
             handleInputUpdate_old('pointerdown');
+            handleInputUpdate(e);
         });
     }
 
@@ -89,6 +91,7 @@ function initEvents() {
         state.input.isPointerDown = false;
         state.input.dragStartOnSVG = null;
         handleInputUpdate_old('pointerup');
+        handleInputUpdate(e);
     };
     window.addEventListener('pointerup', stop);
     window.addEventListener('pointercancel', stop);

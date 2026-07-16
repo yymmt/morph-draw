@@ -286,6 +286,23 @@ const interactionMap = {
         shift_pointerdown: {},
         ctrl_wheel: {
             f: () => handleZoom(), needsRender: true,
+        },
+        drag_no_key: {
+            pointerdown: {
+                f: () => {
+                    console.log("キーなしで pointerdown");
+                }
+            },
+            pointermove: {
+                f: () => {
+                    console.log("キーなしで pointermove");
+                }
+            },
+            pointerup: {
+                f: () => {
+                    console.log("キーなしで pointerup");
+                }
+            }
         }
     },
     view_gallery: {

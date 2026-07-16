@@ -905,6 +905,17 @@ async function handleInputUpdate(event) {
         }
     }
 
+    const hasNoActiveKeys = !Object.keys(state.input.keys).some(k => state.input.keys[k]);
+    if (hasNoActiveKeys) {
+        if (event.type === 'pointerdown') {
+            interaction = interactionMap[viewKey]?.drag_no_key?.pointerdown;
+        } else if (event.type === 'pointermove' && state.input.isPointerDown) {
+            interaction = interactionMap[viewKey]?.drag_no_key?.pointermove;
+        } else if (event.type === 'pointerup') {
+            interaction = interactionMap[viewKey]?.drag_no_key?.pointerup;
+        }
+    }
+
     const keyDownMap = interactionMap[viewKey]?.key_down;
     if (event.type === 'keydown' && keyDownMap) {
         const key = event.key.toLowerCase();
@@ -935,7 +946,7 @@ async function handleInputUpdate(event) {
     }
 
     if (interaction && typeof interaction.f === 'function') {
-        await interaction.f();
+        await interaction.f(event);
     }
     if (interaction?.pushHistory) {
         pushHistory();
