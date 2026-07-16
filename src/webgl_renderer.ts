@@ -375,3 +375,15 @@ function renderPatternWebGL(positions, textureName) {
     
     return state.patternWebGLCanvas;
 }
+
+(window as any).initWebGLPatternRenderer = initWebGLPatternRenderer;
+(window as any).loadWebGLTexture = loadWebGLTexture;
+(window as any).drawFallbackLeaf = drawFallbackLeaf;
+(window as any).drawFallbackBrush = drawFallbackBrush;
+(window as any).interpolatePerimeter = interpolatePerimeter;
+(window as any).getShapePoint = getShapePoint;
+(window as any).initPatternCorners = initPatternCorners;
+(window as any).generateCoonsPatchMesh = generateCoonsPatchMesh;
+(window as any).generateStrokeCoonsPatchMesh = generateStrokeCoonsPatchMesh;
+(window as any).renderPatternWebGL = renderPatternWebGL;
+

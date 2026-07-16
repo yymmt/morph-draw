@@ -281,3 +281,6 @@ const MDMath = {
         if (obj.r !== undefined) obj.r *= r;
     }
 };
+
+(window as any).MDMath = MDMath;
+

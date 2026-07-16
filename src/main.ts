@@ -1,7 +1,19 @@
 /**
- * @file main.js
+ * @file main.ts
  * @description Entry point for MorphDraw. Binds top-level event listeners (pointer, window, keyboard, DOM) and initializes the IndexedDB store.
  */
+
+import './mdmath';
+import './webgl_renderer';
+import './state';
+import './db';
+import './history';
+import './renderer';
+import './editor';
+import './test';
+import './style.css';
+
+
 
 document.addEventListener('DOMContentLoaded', () => {
     initDB();

@@ -106,6 +106,7 @@ const state = {
  */
 const keyHandlers = {
     no_mod: {
+        /*
         x: {
             keydown: [
                 {
@@ -132,6 +133,7 @@ const keyHandlers = {
                 }
             ]
         },
+        */
         c: { keydown: { f: (ctx) => handleAddCircleStart(ctx), needsRender: true } },
         w: {
             keydown: [
@@ -274,7 +276,6 @@ const interactionMap = {
             },
         },
         key_down: {
-            c: {},
             p: {
                 f: (ctx) => handleConvertRasterToPolyline(ctx),
                 needsRender: true,
@@ -501,3 +502,35 @@ function getModifierState(rawEvent) {
     if (shift) return 'shift';
     return 'no_mod';
 }
+
+(window as any).state = state;
+(window as any).keyHandlers = keyHandlers;
+(window as any).interactionMap = interactionMap;
+(window as any).modeHandlers = modeHandlers;
+(window as any).getDomsOf = getDomsOf;
+(window as any).getDomOf = getDomOf;
+(window as any).getDoms = getDoms;
+(window as any).getDom = getDom;
+(window as any).toggleClassDom = toggleClassDom;
+(window as any).addClassDom = addClassDom;
+(window as any).removeClassDom = removeClassDom;
+(window as any).newElm = newElm;
+(window as any).filterAttribute = filterAttribute;
+(window as any).getSVGPoint = getSVGPoint;
+(window as any).getMainCanvasSVGPoint = getMainCanvasSVGPoint;
+(window as any).getSVGVector = getSVGVector;
+(window as any).getMainCanvasSVGVector = getMainCanvasSVGVector;
+(window as any).isFocusEditable = isFocusEditable;
+(window as any).initializeIdCounter = initializeIdCounter;
+(window as any).generateId = generateId;
+(window as any).stateReplacer = stateReplacer;
+(window as any).initOffscreenCanvases = initOffscreenCanvases;
+(window as any).resizeOffscreenCanvases = resizeOffscreenCanvases;
+(window as any).getModifierState = getModifierState;
+
+Object.defineProperty(window, 'db', {
+    get() { return db; },
+    set(v) { db = v; },
+    configurable: true
+});
+

@@ -518,12 +518,24 @@ function renderGuides(id, container) {
                 });
             }
 
-            const targetT = state.patternEdit.targetT;
-            const p = getShapePoint(shape, targetT);
+            if (state.patternEdit.active && state.selectedShapeIds.includes(shape.id)) {
+                const targetT = state.patternEdit.targetT;
+                const p = getShapePoint(shape, targetT);
 
-            addCircle(p.x, p.y, 6, 'none', '#f44336', 1.5);
-            addCircle(p.x, p.y, 3, '#f44336', '#f44336', 0);
+                addCircle(p.x, p.y, 6, 'none', '#f44336', 1.5);
+                addCircle(p.x, p.y, 3, '#f44336', '#f44336', 0);
+            }
         }
     }
     container.appendChild(g);
 }
+
+(window as any).renderCanvas = renderCanvas;
+(window as any).clearAllCaches = clearAllCaches;
+(window as any).getShapeCache = getShapeCache;
+(window as any).getShapeRenderBounds = getShapeRenderBounds;
+(window as any).markShapeDirty = markShapeDirty;
+(window as any).drawShapeToCanvasContext = drawShapeToCanvasContext;
+(window as any).rasterizeInactiveLayers = rasterizeInactiveLayers;
+(window as any).renderMinimap = renderMinimap;
+(window as any).renderGuides = renderGuides;

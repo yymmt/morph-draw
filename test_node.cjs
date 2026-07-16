@@ -2,36 +2,43 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-// mdmath.js のコードを読み込む
-const mdmathJsPath = path.join(__dirname, 'mdmath.js');
-if (!fs.existsSync(mdmathJsPath)) {
-    console.error(`Error: Cannot find mdmath.js at ${mdmathJsPath}`);
-    process.exit(1);
-}
-const mdmathJsCode = fs.readFileSync(mdmathJsPath, 'utf8');
+// Helper to strip TS-specific syntax for VM execution
+const cleanTsCode = (code) => {
+    return code
+        .replace(/\s+as\s+any/g, '')
+        .replace(/^import\s+['"].*?['"];?/gm, '');
+};
 
-// webgl_renderer.js のコードを読み込む
-const webglRendererJsPath = path.join(__dirname, 'webgl_renderer.js');
-if (!fs.existsSync(webglRendererJsPath)) {
-    console.error(`Error: Cannot find webgl_renderer.js at ${webglRendererJsPath}`);
+// mdmath.ts のコードを読み込む
+const mdmathJsPath = path.join(__dirname, 'src', 'mdmath.ts');
+if (!fs.existsSync(mdmathJsPath)) {
+    console.error(`Error: Cannot find mdmath.ts at ${mdmathJsPath}`);
     process.exit(1);
 }
-const webglRendererJsCode = fs.readFileSync(webglRendererJsPath, 'utf8');
+const mdmathJsCode = cleanTsCode(fs.readFileSync(mdmathJsPath, 'utf8'));
+
+// webgl_renderer.ts のコードを読み込む
+const webglRendererJsPath = path.join(__dirname, 'src', 'webgl_renderer.ts');
+if (!fs.existsSync(webglRendererJsPath)) {
+    console.error(`Error: Cannot find webgl_renderer.ts at ${webglRendererJsPath}`);
+    process.exit(1);
+}
+const webglRendererJsCode = cleanTsCode(fs.readFileSync(webglRendererJsPath, 'utf8'));
 
 // 新しい分離ファイルを読み込む
-const stateJsPath = path.join(__dirname, 'state.js');
-const dbJsPath = path.join(__dirname, 'db.js');
-const historyJsPath = path.join(__dirname, 'history.js');
-const rendererJsPath = path.join(__dirname, 'renderer.js');
-const editorJsPath = path.join(__dirname, 'editor.js');
-const mainJsPath = path.join(__dirname, 'main.js');
+const stateJsPath = path.join(__dirname, 'src', 'state.ts');
+const dbJsPath = path.join(__dirname, 'src', 'db.ts');
+const historyJsPath = path.join(__dirname, 'src', 'history.ts');
+const rendererJsPath = path.join(__dirname, 'src', 'renderer.ts');
+const editorJsPath = path.join(__dirname, 'src', 'editor.ts');
+const mainJsPath = path.join(__dirname, 'src', 'main.ts');
 
-const stateJsCode = fs.readFileSync(stateJsPath, 'utf8');
-const dbJsCode = fs.readFileSync(dbJsPath, 'utf8');
-const historyJsCode = fs.readFileSync(historyJsPath, 'utf8');
-const rendererJsCode = fs.readFileSync(rendererJsPath, 'utf8');
-const editorJsCode = fs.readFileSync(editorJsPath, 'utf8');
-const mainJsCode = fs.readFileSync(mainJsPath, 'utf8');
+const stateJsCode = cleanTsCode(fs.readFileSync(stateJsPath, 'utf8'));
+const dbJsCode = cleanTsCode(fs.readFileSync(dbJsPath, 'utf8'));
+const historyJsCode = cleanTsCode(fs.readFileSync(historyJsPath, 'utf8'));
+const rendererJsCode = cleanTsCode(fs.readFileSync(rendererJsPath, 'utf8'));
+const editorJsCode = cleanTsCode(fs.readFileSync(editorJsPath, 'utf8'));
+const mainJsCode = cleanTsCode(fs.readFileSync(mainJsPath, 'utf8'));
 
 // ダミー要素のファクトリ
 const createDummyElement = () => ({

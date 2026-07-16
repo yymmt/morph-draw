@@ -62,3 +62,8 @@ function redo() {
     clearAllCaches();
     renderCanvas();
 }
+
+(window as any).pushHistory = pushHistory;
+(window as any).undo = undo;
+(window as any).redo = redo;
+

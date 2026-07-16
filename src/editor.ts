@@ -2231,3 +2231,45 @@ function smoothPath(path, iterations = 2) {
     }
     return pts;
 }
+
+(window as any).handleInputUpdate = handleInputUpdate;
+(window as any).handleInputUpdate_old = handleInputUpdate_old;
+(window as any).updateTransformPivotToCenter = updateTransformPivotToCenter;
+(window as any).handleMove = handleMove;
+(window as any).handleRotate = handleRotate;
+(window as any).handleScale = handleScale;
+(window as any).handleConvertRasterToPolyline = handleConvertRasterToPolyline;
+(window as any).handleZoom = handleZoom;
+(window as any).handleToggleAnchor = handleToggleAnchor;
+(window as any).handleEnterAction = handleEnterAction;
+(window as any).handleTransformStart = handleTransformStart;
+(window as any).handleTransformEnd = handleTransformEnd;
+(window as any).handleToggleThicknessEdit = handleToggleThicknessEdit;
+(window as any).handleToggleOutline = handleToggleOutline;
+(window as any).handleToggleFillEnabled = handleToggleFillEnabled;
+(window as any).handleTogglePatternEdit = handleTogglePatternEdit;
+(window as any).handleUndoAction = handleUndoAction;
+(window as any).handleCopy = handleCopy;
+(window as any).handlePaste = handlePaste;
+(window as any).handleRedoAction = handleRedoAction;
+(window as any).handleClearVertexFocus = handleClearVertexFocus;
+(window as any).handleSearchNext = handleSearchNext;
+(window as any).handleSearchPrev = handleSearchPrev;
+(window as any).handleFocusVertexPrev = handleFocusVertexPrev;
+(window as any).handleFocusVertexNext = handleFocusVertexNext;
+(window as any).toggleHelpModal = toggleHelpModal;
+(window as any).handleQuitToGallery = handleQuitToGallery;
+(window as any).handleOpenSearch = handleOpenSearch;
+(window as any).handleOpenCommand = handleOpenCommand;
+(window as any).resolveBezierDependencies = resolveBezierDependencies;
+(window as any).getCombinedBounds = getCombinedBounds;
+(window as any).deleteSelectedVertex = deleteSelectedVertex;
+(window as any).deleteSelectedShapes = deleteSelectedShapes;
+(window as any).handleDeleteThicknessPoint = handleDeleteThicknessPoint;
+(window as any).handleCreateWrap = handleCreateWrap;
+(window as any).handleAddCircleStart = handleAddCircleStart;
+(window as any).switchSettingsTab = switchSettingsTab;
+(window as any).addShapeAt = addShapeAt;
+(window as any).createWrap = createWrap;
+
+

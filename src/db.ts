@@ -635,3 +635,16 @@ function renderLayerList() {
         list.appendChild(item);
     });
 }
+
+(window as any).initDB = initDB;
+(window as any).saveDrawing = saveDrawing;
+(window as any).loadGallery = loadGallery;
+(window as any).deleteDrawing = deleteDrawing;
+(window as any).openDrawing = openDrawing;
+(window as any).startNewDrawing = startNewDrawing;
+(window as any).importImageFile = importImageFile;
+(window as any).addLayer = addLayer;
+(window as any).deleteLayer = deleteLayer;
+(window as any).renderLayerList = renderLayerList;
+(window as any).switchView = switchView;
+
