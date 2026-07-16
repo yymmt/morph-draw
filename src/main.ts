@@ -176,8 +176,8 @@ function initEvents() {
 
     const centerSlider = getDom('#slider-sigma-center');
     if (centerSlider) {
-        centerSlider.oninput = (e) => {
-            const val = parseInt((e.target as HTMLInputElement).value, 10);
+        centerSlider.oninput = () => {
+            const val = parseInt(centerSlider.value, 10);
             state.deformSettings.sigmaCenter = val;
             const label = getDom('#val-sigma-center');
             if (label) label.textContent = String(val);
@@ -189,8 +189,8 @@ function initEvents() {
 
     const distSlider = getDom('#slider-sigma-dist');
     if (distSlider) {
-        distSlider.oninput = (e) => {
-            const val = parseInt((e.target as HTMLInputElement).value, 10);
+        distSlider.oninput = () => {
+            const val = parseInt(distSlider.value, 10);
             state.deformSettings.sigmaDist = val;
             const label = getDom('#val-sigma-dist');
             if (label) label.textContent = String(val);

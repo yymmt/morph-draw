@@ -89,6 +89,7 @@ declare global {
         updateSelectionByDragRect: () => void;
         handlePolylineDeform: () => void;
         syncDeformSlidersFromState: () => void;
+        handleDDist: (ctx: any) => void;
     }
 
     const state: any;
@@ -180,6 +181,7 @@ declare global {
     const updateSelectionByDragRect: () => void;
     const handlePolylineDeform: () => void;
     const syncDeformSlidersFromState: () => void;
+    const handleDDist: (ctx: any) => void;
 }
 
 export {};

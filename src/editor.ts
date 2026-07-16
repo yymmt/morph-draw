@@ -2297,6 +2297,7 @@ function smoothPath(path, iterations = 2) {
 function getExtendedPolyline(pointsB) {
     if (pointsB.length < 2) return pointsB.map(p => ({ ...p, isExtended: false }));
     const extLength = 15;
+    const extStep = 10; // 固定値（10px）にすることで、点密度が高くても十分な延長線を確保する
     
     // 始点側の延長 [0] -> [1] の向きの逆方向
     const dxStart = pointsB[0].x - pointsB[1].x;
@@ -2307,8 +2308,8 @@ function getExtendedPolyline(pointsB) {
     const startExtensions = [];
     for (let i = extLength; i >= 1; i--) {
         startExtensions.push({
-            x: pointsB[0].x + uStart.x * distStart * i,
-            y: pointsB[0].y + uStart.y * distStart * i,
+            x: pointsB[0].x + uStart.x * extStep * i,
+            y: pointsB[0].y + uStart.y * extStep * i,
             isExtended: true
         });
     }
@@ -2323,8 +2324,8 @@ function getExtendedPolyline(pointsB) {
     const endExtensions = [];
     for (let i = 1; i <= extLength; i++) {
         endExtensions.push({
-            x: pointsB[n].x + uEnd.x * distEnd * i,
-            y: pointsB[n].y + uEnd.y * distEnd * i,
+            x: pointsB[n].x + uEnd.x * extStep * i,
+            y: pointsB[n].y + uEnd.y * extStep * i,
             isExtended: true
         });
     }
@@ -2390,14 +2391,14 @@ function deformPolyline(pointsA, pointsB, k) {
 }
 
 function syncDeformSlidersFromState() {
-    const centerSlider = getDom('#slider-sigma-center') as HTMLInputElement;
+    const centerSlider = getDom('#slider-sigma-center');
     const centerLabel = getDom('#val-sigma-center');
     if (centerSlider && state.deformSettings) {
         centerSlider.value = String(state.deformSettings.sigmaCenter);
         if (centerLabel) centerLabel.textContent = String(state.deformSettings.sigmaCenter);
     }
 
-    const distSlider = getDom('#slider-sigma-dist') as HTMLInputElement;
+    const distSlider = getDom('#slider-sigma-dist');
     const distLabel = getDom('#val-sigma-dist');
     if (distSlider && state.deformSettings) {
         distSlider.value = String(state.deformSettings.sigmaDist);
@@ -2474,7 +2475,7 @@ function handlePolylineDeform() {
 (window as any).updateSelectionByDragRect = updateSelectionByDragRect;
 (window as any).handlePolylineDeform = handlePolylineDeform;
 (window as any).syncDeformSlidersFromState = syncDeformSlidersFromState;
-
+(window as any).handleDDist = handleDDist;
 
 export {};
 
