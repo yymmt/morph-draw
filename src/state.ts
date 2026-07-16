@@ -289,19 +289,17 @@ const interactionMap = {
         },
         drag_no_key: {
             pointerdown: {
-                f: () => {
-                    console.log("キーなしで pointerdown");
-                }
+                needsRender: true
             },
             pointermove: {
-                f: () => {
-                    console.log("キーなしで pointermove");
-                }
+                f: (event) => {
+                    updateSelectionByDragRect();
+                },
+                needsRender: true
             },
             pointerup: {
-                f: () => {
-                    console.log("キーなしで pointerup");
-                }
+                needsRender: true,
+                pushHistory: true
             }
         }
     },

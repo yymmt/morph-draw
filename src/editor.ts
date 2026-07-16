@@ -1995,6 +1995,63 @@ function handleConvertRasterToPolyline(ctx) {
 }
 
 /**
+ * Updates selectedShapeIds to contain all shapes inside the active selection drag rectangle.
+ */
+function updateSelectionByDragRect() {
+    const start = state.input.dragStartOnSVG;
+    const current = state.input.pointerOnSVG;
+    if (!start || !current) return;
+
+    const xMin = Math.min(start.x, current.x);
+    const xMax = Math.max(start.x, current.x);
+    const yMin = Math.min(start.y, current.y);
+    const yMax = Math.max(start.y, current.y);
+
+    const activeLayer = state.shapes[state.selectedLayerId];
+    if (!activeLayer || !activeLayer.childIds) return;
+
+    const selectedIds = [];
+
+    activeLayer.childIds.forEach((childId) => {
+        const shape = state.shapes[childId];
+        if (!shape) return;
+
+        let overlaps = false;
+
+        if (shape.type === 'polyline') {
+            if (shape.points) {
+                for (const p of shape.points) {
+                    if (p.x >= xMin && p.x <= xMax && p.y >= yMin && p.y <= yMax) {
+                        overlaps = true;
+                        break;
+                    }
+                }
+            }
+        } else if (shape.bezierIds) {
+            for (const bid of shape.bezierIds) {
+                const bez = state.beziers[bid];
+                if (bez && bez.samplePointByT) {
+                    for (const p of Object.values(bez.samplePointByT)) {
+                        if (p.x >= xMin && p.x <= xMax && p.y >= yMin && p.y <= yMax) {
+                            overlaps = true;
+                            break;
+                        }
+                    }
+                }
+                if (overlaps) break;
+            }
+        }
+
+        if (overlaps) {
+            selectedIds.push(childId);
+        }
+    });
+
+    state.selectedShapeIds = selectedIds;
+}
+
+
+/**
  * Splits a stroke into segments at sharp curvature points.
  * @param {Array<{x:number, y:number}>} stroke - Sequence of points.
  * @returns {Array<Array<{x:number, y:number}>>}
@@ -2282,8 +2339,10 @@ function smoothPath(path, iterations = 2) {
 (window as any).switchSettingsTab = switchSettingsTab;
 (window as any).addShapeAt = addShapeAt;
 (window as any).createWrap = createWrap;
+(window as any).updateSelectionByDragRect = updateSelectionByDragRect;
 
 export {};
+
 
 
 

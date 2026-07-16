@@ -86,6 +86,7 @@ declare global {
         handleDeleteThicknessPoint: (ctx: any) => void;
         handleCreateWrap: (ctx: any) => void;
         handleAddCircleStart: (ctx: any) => void;
+        updateSelectionByDragRect: () => void;
     }
 
     const state: any;
@@ -174,6 +175,7 @@ declare global {
     const handleDeleteThicknessPoint: (ctx: any) => void;
     const handleCreateWrap: (ctx: any) => void;
     const handleAddCircleStart: (ctx: any) => void;
+    const updateSelectionByDragRect: () => void;
 }
 
 export {};

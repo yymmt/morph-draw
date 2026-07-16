@@ -138,6 +138,27 @@ function renderCanvas() {
         }
     }
 
+    const hasNoActiveKeys = !Object.keys(state.input.keys).some(k => state.input.keys[k]);
+    if (state.input.isPointerDown && hasNoActiveKeys && state.input.dragStartOnSVG && state.input.pointerOnSVG) {
+        const start = state.input.dragStartOnSVG;
+        const current = state.input.pointerOnSVG;
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        const x = Math.min(start.x, current.x);
+        const y = Math.min(start.y, current.y);
+        const w = Math.abs(start.x - current.x);
+        const h = Math.abs(start.y - current.y);
+        rect.setAttribute('x', String(x));
+        rect.setAttribute('y', String(y));
+        rect.setAttribute('width', String(w));
+        rect.setAttribute('height', String(h));
+        rect.setAttribute('fill', 'rgba(59, 130, 246, 0.15)');
+        rect.setAttribute('stroke', '#3b82f6');
+        rect.setAttribute('stroke-width', '1.5');
+        rect.setAttribute('stroke-dasharray', '3,3');
+        viewport.appendChild(rect);
+    }
+
+
     if (activeLayerId && state.canvas.activeOffscreen) {
         const activeCtx = state.canvas.activeOffscreen.getContext('2d');
         activeCtx.clearRect(0, 0, state.canvas.width, state.canvas.height);
