@@ -905,8 +905,21 @@ async function handleInputUpdate(event) {
         }
     }
 
-    if (event.type === 'keydown' && movePressMap && movePressMap[event.key]) {
-        updateTransformPivotToCenter();
+    const keyDownMap = interactionMap[viewKey]?.key_down;
+    if (event.type === 'keydown' && keyDownMap) {
+        const key = event.key.toLowerCase();
+        const config = keyDownMap[key] || keyDownMap[event.key];
+        if (config) {
+            interaction = config;
+        }
+    }
+
+    if (event.type === 'keydown' && movePressMap) {
+        const key = event.key.toLowerCase();
+        const config = movePressMap[key] || movePressMap[event.key];
+        if (config && typeof config.keydown === 'function') {
+            config.keydown();
+        }
     }
 
     if (event.type === 'keyup' && movePressMap) {

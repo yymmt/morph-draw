@@ -167,13 +167,6 @@ const keyHandlers = {
         Escape: { keydown: { f: (ctx) => handleClearVertexFocus(ctx), needsRender: true } },
         a: { keydown: { f: (ctx) => handleToggleAnchor(ctx) } },
         Enter: { keydown: { f: (ctx) => handleEnterAction(ctx) } },
-        p: {
-            keydown: {
-                f: (ctx) => handleConvertRasterToPolyline(ctx),
-                needsRender: true,
-                pushHistory: true
-            }
-        },
 
         t: {
             keydown: { f: (ctx) => handleTransformStart(ctx), needsRender: true },
@@ -247,9 +240,9 @@ const modeHandlers = {
 const interactionMap = {
     view_canvas: {
         pointermove_while_key_press: {
-            m: { f: () => handleMove(), needsRender: true, pushHistoryOnKeyUp: true },
-            r: { f: () => handleRotate(), needsRender: true, pushHistoryOnKeyUp: true },
-            s: { f: () => handleScale(), needsRender: true, pushHistoryOnKeyUp: true },
+            m: { f: () => handleMove(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true },
+            r: { f: () => handleRotate(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true },
+            s: { f: () => handleScale(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true },
             x: {
                 f: () => {
                     const curr = state.input.pointerOnSVG;
@@ -282,6 +275,11 @@ const interactionMap = {
         },
         key_down: {
             c: {},
+            p: {
+                f: (ctx) => handleConvertRasterToPolyline(ctx),
+                needsRender: true,
+                pushHistory: true
+            }
         },
         pointerdown: {},
         shift_pointerdown: {},
