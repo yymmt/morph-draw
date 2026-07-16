@@ -36,7 +36,7 @@ declare global {
         getDom: (pat: string) => any;
         getDoms: (pat: string) => any[];
         getDomsOf: (root: any, pat: string) => any[];
-        newElm: (tag: string) => any;
+        newElm: (tag: string, attrs?: any) => any;
         getMainCanvasSVGVector: () => any;
         getMainCanvasSVGPoint: () => any;
         getModifierState: (e: any) => string;
@@ -63,6 +63,29 @@ declare global {
         addShapeAt: (type: string, x: number, y: number) => void;
         createWrap: () => void;
         resolveBezierDependencies: () => void;
+        handleMove: () => void;
+        handleRotate: () => void;
+        handleScale: () => void;
+        handleConvertRasterToPolyline: (ctx: any) => void;
+        handleZoom: () => void;
+        handleToggleAnchor: (ctx: any) => void;
+        handleEnterAction: (ctx?: any) => void;
+        handleTransformStart: (ctx: any) => void;
+        handleTransformEnd: (ctx: any) => void;
+        handleToggleThicknessEdit: (ctx: any) => void;
+        handleToggleOutline: (ctx: any) => void;
+        handleToggleFillEnabled: (ctx: any) => void;
+        handleTogglePatternEdit: (ctx: any) => void;
+        handleUndoAction: (ctx: any) => void;
+        handleCopy: (ctx: any) => void;
+        handlePaste: (ctx: any) => void;
+        handleRedoAction: (ctx: any) => void;
+        handleClearVertexFocus: (ctx: any) => void;
+        deleteSelectedVertex: (ctx?: any) => void;
+        deleteSelectedShapes: (ctx?: any) => void;
+        handleDeleteThicknessPoint: (ctx: any) => void;
+        handleCreateWrap: (ctx: any) => void;
+        handleAddCircleStart: (ctx: any) => void;
     }
 
     const state: any;
@@ -101,7 +124,7 @@ declare global {
     const getDom: (pat: string) => any;
     const getDoms: (pat: string) => any[];
     const getDomsOf: (root: any, pat: string) => any[];
-    const newElm: (tag: string) => any;
+    const newElm: (tag: string, attrs?: any) => any;
     const getMainCanvasSVGVector: () => any;
     const getMainCanvasSVGPoint: () => any;
     const getModifierState: (e: any) => string;
@@ -128,6 +151,29 @@ declare global {
     const addShapeAt: (type: string, x: number, y: number) => void;
     const createWrap: () => void;
     const resolveBezierDependencies: () => void;
+    const handleMove: () => void;
+    const handleRotate: () => void;
+    const handleScale: () => void;
+    const handleConvertRasterToPolyline: (ctx: any) => void;
+    const handleZoom: () => void;
+    const handleToggleAnchor: (ctx: any) => void;
+    const handleEnterAction: (ctx?: any) => void;
+    const handleTransformStart: (ctx: any) => void;
+    const handleTransformEnd: (ctx: any) => void;
+    const handleToggleThicknessEdit: (ctx: any) => void;
+    const handleToggleOutline: (ctx: any) => void;
+    const handleToggleFillEnabled: (ctx: any) => void;
+    const handleTogglePatternEdit: (ctx: any) => void;
+    const handleUndoAction: (ctx: any) => void;
+    const handleCopy: (ctx: any) => void;
+    const handlePaste: (ctx: any) => void;
+    const handleRedoAction: (ctx: any) => void;
+    const handleClearVertexFocus: (ctx: any) => void;
+    const deleteSelectedVertex: (ctx?: any) => void;
+    const deleteSelectedShapes: (ctx?: any) => void;
+    const handleDeleteThicknessPoint: (ctx: any) => void;
+    const handleCreateWrap: (ctx: any) => void;
+    const handleAddCircleStart: (ctx: any) => void;
 }
 
 export {};
