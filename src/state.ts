@@ -53,10 +53,12 @@ const state = {
     },
     draftStrokes: [],
     currentDraftStroke: null,
+    deformStartPoints: null,
     input: {
         keys: {},
         pointerOnSVG: { x: 0, y: 0 },
         dragStartOnSVG: null,
+        dragStart: null,
         pointer: { x: 0, y: 0 },
         dPointer: { x: 0, y: 0 },
         deltaY: 0,
@@ -95,6 +97,8 @@ const state = {
         state.drawingType = 'canvas';
         state.draftStrokes = [];
         state.currentDraftStroke = null;
+        state.deformStartPoints = null;
+        state.input.dragStart = null;
     }
 };
 
@@ -242,10 +246,10 @@ const modeHandlers = {
 const interactionMap = {
     view_canvas: {
         pointermove_while_key_press: {
-            m: { f: () => handleMove(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true },
-            r: { f: () => handleRotate(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true },
-            s: { f: () => handleScale(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true },
-            x: {
+            m: { f: () => handleMove(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true }, // shapeの移動
+            r: { f: () => handleRotate(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true }, // shapeの回転
+            s: { f: () => handleScale(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true }, // shapeの拡大縮小
+            d: { // 下書きレイヤーへの描画
                 f: () => {
                     const curr = state.input.pointerOnSVG;
                     const d = getMainCanvasSVGVector();
@@ -274,6 +278,26 @@ const interactionMap = {
                 },
                 needsRender: true
             },
+            k: {
+                keydown: () => {
+                    if (state.anchoredShapeIds.length !== 1) return;
+                    const anchorId = state.anchoredShapeIds[0];
+                    const anchorShape = state.shapes[anchorId];
+                    if (!anchorShape || anchorShape.type !== 'polyline') return;
+
+                    state.deformStartPoints = {};
+                    state.selectedShapeIds.forEach(id => {
+                        const shape = state.shapes[id];
+                        if (shape && shape.type === 'polyline' && shape.points) {
+                            state.deformStartPoints[id] = shape.points.map(p => ({ x: p.x, y: p.y }));
+                        }
+                    });
+                    state.input.dragStart = { x: state.input.pointer.x, y: state.input.pointer.y };
+                },
+                f: () => handlePolylineDeform(),
+                needsRender: true,
+                pushHistoryOnKeyUp: true
+            }
         },
         key_down: {
             p: {
@@ -549,6 +573,6 @@ Object.defineProperty(window, 'db', {
     configurable: true
 });
 
-export {};
+export { };
 
 

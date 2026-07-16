@@ -87,6 +87,7 @@ declare global {
         handleCreateWrap: (ctx: any) => void;
         handleAddCircleStart: (ctx: any) => void;
         updateSelectionByDragRect: () => void;
+        handlePolylineDeform: () => void;
     }
 
     const state: any;
@@ -176,6 +177,7 @@ declare global {
     const handleCreateWrap: (ctx: any) => void;
     const handleAddCircleStart: (ctx: any) => void;
     const updateSelectionByDragRect: () => void;
+    const handlePolylineDeform: () => void;
 }
 
 export {};

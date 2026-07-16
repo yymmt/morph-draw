@@ -322,8 +322,8 @@ try {
     sandbox.testStateRaster = testStateRaster;
     vm.runInContext("state.reset(testStateRaster); state.shapes['layer-1'] = { id: 'layer-1', type: 'layer', childIds: [] }; state.scene = ['layer-1']; state.selectedLayerId = 'layer-1'; state.view = 'canvas';", sandbox);
 
-    // xキー押下中のpointermoveエミュレーション
-    vm.runInContext("state.input.keys['x'] = true;", sandbox);
+    // dキー押下中のpointermoveエミュレーション
+    vm.runInContext("state.input.keys['d'] = true;", sandbox);
 
     const strokePoints = [
         { x: 100, y: 100 },
@@ -339,8 +339,8 @@ try {
         vm.runInContext("handleInputUpdate({ type: 'pointermove' });", sandbox);
     }
 
-    // xキー離す(keyup)
-    vm.runInContext("state.input.keys['x'] = false; handleInputUpdate_old('keyup', 'x', { preventDefault: () => {} }); handleInputUpdate({ type: 'keyup', key: 'x' });", sandbox);
+    // dキー離す(keyup)
+    vm.runInContext("state.input.keys['d'] = false; handleInputUpdate_old('keyup', 'd', { preventDefault: () => {} }); handleInputUpdate({ type: 'keyup', key: 'd' });", sandbox);
 
     // draftStrokesに1本記録されたか確認
     const draftStrokesLen = vm.runInContext("state.draftStrokes.length", sandbox);

@@ -287,14 +287,8 @@ function handleToggleAnchor(ctx) {
         state.insertVertexPending = { ...state.focusedVertex };
         return { pushHistory: false, needsRender: false };
     }
-    state.selectedShapeIds.forEach(id => {
-        const idx = state.anchoredShapeIds.indexOf(id);
-        if (idx >= 0) {
-            state.anchoredShapeIds.splice(idx, 1);
-        } else {
-            state.anchoredShapeIds.push(id);
-        }
-    });
+    state.anchoredShapeIds = [...state.selectedShapeIds];
+    state.selectedShapeIds = [];
     return { pushHistory: true, needsRender: true };
 }
 
@@ -2300,6 +2294,127 @@ function smoothPath(path, iterations = 2) {
     return pts;
 }
 
+function getExtendedPolyline(pointsB) {
+    if (pointsB.length < 2) return pointsB.map(p => ({ ...p, isExtended: false }));
+    const extLength = 15;
+    
+    // 始点側の延長 [0] -> [1] の向きの逆方向
+    const dxStart = pointsB[0].x - pointsB[1].x;
+    const dyStart = pointsB[0].y - pointsB[1].y;
+    const distStart = Math.hypot(dxStart, dyStart);
+    const uStart = { x: distStart > 0 ? dxStart / distStart : 0, y: distStart > 0 ? dyStart / distStart : 0 };
+
+    const startExtensions = [];
+    for (let i = extLength; i >= 1; i--) {
+        startExtensions.push({
+            x: pointsB[0].x + uStart.x * distStart * i,
+            y: pointsB[0].y + uStart.y * distStart * i,
+            isExtended: true
+        });
+    }
+
+    // 終点側の延長 [n] -> [n-1] の向きの逆方向
+    const n = pointsB.length - 1;
+    const dxEnd = pointsB[n].x - pointsB[n-1].x;
+    const dyEnd = pointsB[n].y - pointsB[n-1].y;
+    const distEnd = Math.hypot(dxEnd, dyEnd);
+    const uEnd = { x: distEnd > 0 ? dxEnd / distEnd : 0, y: distEnd > 0 ? dyEnd / distEnd : 0 };
+
+    const endExtensions = [];
+    for (let i = 1; i <= extLength; i++) {
+        endExtensions.push({
+            x: pointsB[n].x + uEnd.x * distEnd * i,
+            y: pointsB[n].y + uEnd.y * distEnd * i,
+            isExtended: true
+        });
+    }
+
+    return [
+        ...startExtensions,
+        ...pointsB.map(p => ({ ...p, isExtended: false })),
+        ...endExtensions
+    ];
+}
+
+function deformPolyline(pointsA, pointsB, k) {
+    const fullB = getExtendedPolyline(pointsB);
+    const centerB = pointsB[Math.floor(pointsB.length / 2)] || { x: 0, y: 0 };
+    const sigmaCenter = 120;
+    const sigmaDist = 1000;
+
+    const Sb = fullB[0];
+    const Eb = fullB[fullB.length - 1];
+    const vbx = Eb.x - Sb.x;
+    const vby = Eb.y - Sb.y;
+    const lenB = Math.hypot(vbx, vby);
+    const ubx = lenB > 0 ? vbx / lenB : 0;
+    const uby = lenB > 0 ? vby / lenB : 1;
+
+    return pointsA.map((pa) => {
+        // (a) Bの基準スパン上に pa を投影してパラメータ t (0〜1) を得る
+        const dx_proj = pa.x - Sb.x;
+        const dy_proj = pa.y - Sb.y;
+        let t_proj = lenB > 0 ? (dx_proj * ubx + dy_proj * uby) / lenB : 0.5;
+        t_proj = Math.max(0, Math.min(1, t_proj)); // 0〜1にクランプ
+
+        // 小数インデックスから線形補間で滑らかな座標を得る
+        const floatIdx = t_proj * (fullB.length - 1);
+        const idx0 = Math.floor(floatIdx);
+        const idx1 = Math.min(fullB.length - 1, idx0 + 1);
+        const frac = floatIdx - idx0;
+
+        const p0 = fullB[idx0];
+        const p1 = fullB[idx1];
+
+        const closestPb = {
+            x: p0.x * (1 - frac) + p1.x * frac,
+            y: p0.y * (1 - frac) + p1.y * frac
+        };
+        const minDist = Math.hypot(pa.x - closestPb.x, pa.y - closestPb.y);
+
+        // (b) 影響度（ウェイト）の計算
+        const distFromCenterB = Math.hypot(closestPb.x - centerB.x, closestPb.y - centerB.y);
+        const wCenter = Math.exp(-(distFromCenterB * distFromCenterB) / (2 * sigmaCenter * sigmaCenter));
+        const wDist = Math.exp(-(minDist * minDist) / (2 * sigmaDist * sigmaDist));
+        const weight = wCenter * wDist;
+
+        // (c) 座標の変形
+        const dx = closestPb.x - pa.x;
+        const dy = closestPb.y - pa.y;
+
+        return {
+            x: pa.x + k * weight * dx,
+            y: pa.y + k * weight * dy
+        };
+    });
+}
+
+function handlePolylineDeform() {
+    if (state.anchoredShapeIds.length !== 1) return;
+    const anchorId = state.anchoredShapeIds[0];
+    const anchorShape = state.shapes[anchorId];
+    if (!anchorShape || anchorShape.type !== 'polyline' || !anchorShape.points) return;
+
+    const dragStart = state.input.dragStart;
+    if (!dragStart) return;
+    const currentX = state.input.pointer.x;
+    const k = (currentX - dragStart.x) * 0.01;
+
+    state.selectedShapeIds.forEach(id => {
+        const shape = state.shapes[id];
+        if (!shape || shape.type !== 'polyline' || !shape.points) return;
+
+        const startPoints = state.deformStartPoints?.[id];
+        if (!startPoints) return;
+
+        // Calculate deformed points
+        shape.points = deformPolyline(startPoints, anchorShape.points, k);
+        
+        // Mark shape cache as dirty to force redraw
+        markShapeDirty(id);
+    });
+}
+
 (window as any).handleInputUpdate = handleInputUpdate;
 (window as any).handleInputUpdate_old = handleInputUpdate_old;
 (window as any).updateTransformPivotToCenter = updateTransformPivotToCenter;
@@ -2340,6 +2455,8 @@ function smoothPath(path, iterations = 2) {
 (window as any).addShapeAt = addShapeAt;
 (window as any).createWrap = createWrap;
 (window as any).updateSelectionByDragRect = updateSelectionByDragRect;
+(window as any).handlePolylineDeform = handlePolylineDeform;
+
 
 export {};
 

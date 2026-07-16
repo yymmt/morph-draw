@@ -453,11 +453,18 @@ function renderGuides(id, container) {
         g.appendChild(c);
     };
 
-    if (shape.bezierIds) {
+    if (shape.bezierIds || shape.type === 'polyline') {
         const guidePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        const v = i => state.beziers[shape.bezierIds[i]].controlPoints.map(cp => cp.v);
-        const ps = (vArr, j) => `${vArr[j].x},${vArr[j].y}`;
-        const d = `M ${ps(v(0), 0)} ` + shape.bezierIds.map((bid, i) => `C ${ps(v(i), 1)} ${ps(v(i), 2)} ${ps(v(i), 3)}`).join(' ') + ' Z';
+        let d = '';
+        if (shape.type === 'polyline') {
+            if (shape.points && shape.points.length > 0) {
+                d = 'M ' + shape.points.map(p => `${p.x},${p.y}`).join(' L') + (shape.isClosed ? ' Z' : '');
+            }
+        } else if (shape.bezierIds) {
+            const v = i => state.beziers[shape.bezierIds[i]].controlPoints.map(cp => cp.v);
+            const ps = (vArr, j) => `${vArr[j].x},${vArr[j].y}`;
+            d = `M ${ps(v(0), 0)} ` + shape.bezierIds.map((bid, i) => `C ${ps(v(i), 1)} ${ps(v(i), 2)} ${ps(v(i), 3)}`).join(' ') + ' Z';
+        }
 
         guidePath.setAttribute('d', d);
         guidePath.setAttribute('fill', 'none');
