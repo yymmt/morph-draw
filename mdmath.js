@@ -96,6 +96,51 @@ const MDMath = {
         // MEMO: 太さ0の範囲については、計算誤差でわずかにかすれた線が見える場合がありますが、追々、ブラシ機能を拡充するときに最適化などを検討します。
         const leftPoints = [];
         const rightPoints = [];
+
+        if (shape.type === 'polyline') {
+            const pts = shape.points;
+            if (!pts || pts.length < 2) return { leftPoints, rightPoints };
+
+            const dists = [0];
+            for (let i = 1; i < pts.length; i++) {
+                dists.push(dists[i-1] + Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y));
+            }
+            const totalLen = dists[dists.length - 1];
+
+            for (let i = 0; i < pts.length; i++) {
+                const p = pts[i];
+                const tGlobal = totalLen > 0.001 ? dists[i] / totalLen : i / (pts.length - 1);
+
+                let dx = 0, dy = 0;
+                if (pts.length > 1) {
+                    if (i === 0) {
+                        dx = pts[1].x - pts[0].x;
+                        dy = pts[1].y - pts[0].y;
+                    } else if (i === pts.length - 1) {
+                        dx = pts[pts.length - 1].x - pts[pts.length - 2].x;
+                        dy = pts[pts.length - 1].y - pts[pts.length - 2].y;
+                    } else {
+                        dx = (pts[i+1].x - pts[i-1].x) / 2;
+                        dy = (pts[i+1].y - pts[i-1].y) / 2;
+                    }
+                }
+
+                const len = Math.hypot(dx, dy);
+                let nx = 0, ny = 0;
+                if (len > 1e-6) {
+                    nx = -dy / len;
+                    ny = dx / len;
+                }
+
+                const w = MDMath.getShapeThickness(shape, tGlobal);
+                const r = w / 2;
+
+                leftPoints.push({ x: p.x + nx * r, y: p.y + ny * r });
+                rightPoints.push({ x: p.x - nx * r, y: p.y - ny * r });
+            }
+            return { leftPoints, rightPoints };
+        }
+
         const N = shape.bezierIds ? shape.bezierIds.length : 0;
         if (N === 0) return { leftPoints, rightPoints };
 
@@ -154,6 +199,45 @@ const MDMath = {
     },
 
     getShapePointAndNormal: (shape, t, beziers) => {
+        if (shape.type === 'polyline') {
+            const pts = shape.points;
+            if (!pts || pts.length < 2) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
+
+            const dists = [0];
+            for (let i = 1; i < pts.length; i++) {
+                dists.push(dists[i-1] + Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y));
+            }
+            const totalLen = dists[dists.length - 1];
+            const targetDist = t * totalLen;
+
+            let idx = 0;
+            while (idx < dists.length - 2 && dists[idx + 1] < targetDist) {
+                idx++;
+            }
+
+            const d0 = dists[idx];
+            const d1 = dists[idx + 1];
+            const frac = (d1 - d0) > 0.001 ? (targetDist - d0) / (d1 - d0) : 0;
+
+            const p0 = pts[idx];
+            const p1 = pts[idx + 1];
+
+            const p = {
+                x: p0.x * (1 - frac) + p1.x * frac,
+                y: p0.y * (1 - frac) + p1.y * frac
+            };
+
+            const dx = p1.x - p0.x;
+            const dy = p1.y - p0.y;
+            const len = Math.hypot(dx, dy);
+            let nx = 0, ny = 0;
+            if (len > 1e-6) {
+                nx = -dy / len;
+                ny = dx / len;
+            }
+            return { p, nx, ny };
+        }
+
         const N = shape.bezierIds ? shape.bezierIds.length : 0;
         if (N === 0) return { p: { x: 0, y: 0 }, nx: 0, ny: 0 };
 

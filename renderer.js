@@ -36,20 +36,33 @@ function getShapeCache(shapeId) {
  */
 function getShapeRenderBounds(shapeId) {
     const shape = state.shapes[shapeId];
-    if (!shape || !shape.bezierIds) return null;
+    if (!shape) return null;
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    shape.bezierIds.forEach(bid => {
-        const bez = state.beziers[bid];
-        if (bez && bez.samplePointByT) {
-            Object.values(bez.samplePointByT).forEach(p => {
+    if (shape.type === 'polyline') {
+        if (shape.points) {
+            shape.points.forEach(p => {
                 if (p.x < minX) minX = p.x;
                 if (p.x > maxX) maxX = p.x;
                 if (p.y < minY) minY = p.y;
                 if (p.y > maxY) maxY = p.y;
             });
         }
-    });
+    } else if (shape.bezierIds) {
+        shape.bezierIds.forEach(bid => {
+            const bez = state.beziers[bid];
+            if (bez && bez.samplePointByT) {
+                Object.values(bez.samplePointByT).forEach(p => {
+                    if (p.x < minX) minX = p.x;
+                    if (p.x > maxX) maxX = p.x;
+                    if (p.y < minY) minY = p.y;
+                    if (p.y > maxY) maxY = p.y;
+                });
+            }
+        });
+    } else {
+        return null;
+    }
 
     if (minX === Infinity) {
         return { x: 0, y: 0, w: state.canvas.width, h: state.canvas.height };
@@ -134,10 +147,12 @@ function renderCanvas() {
     const underCanvas = getDom('#under-canvas');
     const activeCanvas = getDom('#active-canvas');
     const overCanvas = getDom('#over-canvas');
+    const draftCanvas = getDom('#draft-canvas');
 
     drawOffscreenToOnscreen(underCanvas, state.canvas.underOffscreen);
     drawOffscreenToOnscreen(activeCanvas, state.canvas.activeOffscreen);
     drawOffscreenToOnscreen(overCanvas, state.canvas.overOffscreen);
+    drawOffscreenToOnscreen(draftCanvas, state.canvas.draftOffscreen);
 
     renderMinimap();
     renderLayerList();
@@ -194,7 +209,7 @@ function drawShapeToCanvasContext(ctx, shapeId) {
     if (shape.type === 'layer') {
         ctx.globalAlpha *= (shape.style?.opacity ?? 1);
         shape.childIds?.forEach(childId => drawShapeToCanvasContext(ctx, childId));
-    } else if (shape.bezierIds) {
+    } else if (shape.bezierIds || shape.type === 'polyline') {
         const cache = getShapeCache(shapeId);
         if (cache.isDirty) {
             const bounds = getShapeRenderBounds(shapeId);
@@ -231,19 +246,28 @@ function drawShapeToCanvasContext(ctx, shapeId) {
             if (fillEnabled) {
                 cCtx.save();
                 cCtx.beginPath();
-                let first = true;
-                shape.bezierIds.forEach((bid, i) => {
-                    const b = state.beziers[bid];
-                    if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
-                    const v = b.controlPoints.map(cp => cp.v);
-                    if (first) {
-                        cCtx.moveTo(v[0].x, v[0].y);
-                        first = false;
-                    } else {
-                        cCtx.lineTo(v[0].x, v[0].y);
+                if (shape.type === 'polyline') {
+                    if (shape.points && shape.points.length > 2) {
+                        cCtx.moveTo(shape.points[0].x, shape.points[0].y);
+                        for (let i = 1; i < shape.points.length; i++) {
+                            cCtx.lineTo(shape.points[i].x, shape.points[i].y);
+                        }
                     }
-                    cCtx.bezierCurveTo(v[1].x, v[1].y, v[2].x, v[2].y, v[3].x, v[3].y);
-                });
+                } else {
+                    let first = true;
+                    shape.bezierIds.forEach((bid, i) => {
+                        const b = state.beziers[bid];
+                        if (!b || !b.controlPoints || b.controlPoints.length < 4) return;
+                        const v = b.controlPoints.map(cp => cp.v);
+                        if (first) {
+                            cCtx.moveTo(v[0].x, v[0].y);
+                            first = false;
+                        } else {
+                            cCtx.lineTo(v[0].x, v[0].y);
+                        }
+                        cCtx.bezierCurveTo(v[1].x, v[1].y, v[2].x, v[2].y, v[3].x, v[3].y);
+                    });
+                }
                 cCtx.closePath();
 
                 let drawn = false;
@@ -369,6 +393,7 @@ function renderMinimap() {
     if (state.canvas.underOffscreen) ctx.drawImage(state.canvas.underOffscreen, 0, 0);
     if (state.canvas.activeOffscreen) ctx.drawImage(state.canvas.activeOffscreen, 0, 0);
     if (state.canvas.overOffscreen) ctx.drawImage(state.canvas.overOffscreen, 0, 0);
+    if (state.canvas.draftOffscreen) ctx.drawImage(state.canvas.draftOffscreen, 0, 0);
 
     ctx.restore();
 }

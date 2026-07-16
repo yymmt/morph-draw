@@ -301,5 +301,64 @@ try {
     process.exit(1);
 }
 
+// 5. ラスター描画・点列変換テスト
+try {
+    const testStateRaster = {
+        shapes: {},
+        beziers: {},
+        scene: ['layer-1'],
+        selectedLayerId: 'layer-1',
+        draftStrokes: [],
+        currentDraftStroke: null
+    };
+    sandbox.testStateRaster = testStateRaster;
+    vm.runInContext("state.reset(testStateRaster); state.shapes['layer-1'] = { id: 'layer-1', type: 'layer', childIds: [] }; state.scene = ['layer-1']; state.selectedLayerId = 'layer-1'; state.view = 'canvas';", sandbox);
+
+    // xキー押下中のpointermoveエミュレーション
+    vm.runInContext("state.input.keys['x'] = true;", sandbox);
+
+    const strokePoints = [
+        { x: 100, y: 100 },
+        { x: 110, y: 105 },
+        { x: 120, y: 110 },
+        { x: 130, y: 115 },
+        { x: 140, y: 120 }
+    ];
+
+    for (const pt of strokePoints) {
+        sandbox.mockPt = pt;
+        vm.runInContext("state.input.pointerOnSVG = mockPt;", sandbox);
+        vm.runInContext("handleInputUpdate({ type: 'pointermove' });", sandbox);
+    }
+
+    // xキー離す(keyup)
+    vm.runInContext("state.input.keys['x'] = false; handleInputUpdate_old('keyup', 'x', { preventDefault: () => {} }); handleInputUpdate({ type: 'keyup', key: 'x' });", sandbox);
+
+    // draftStrokesに1本記録されたか確認
+    const draftStrokesLen = vm.runInContext("state.draftStrokes.length", sandbox);
+    if (draftStrokesLen !== 1) {
+        throw new Error(`Expected draftStrokes.length to be 1, got ${draftStrokesLen}`);
+    }
+
+    // pキー押下(keydown)で点列変換実行
+    vm.runInContext("state.input.keys['p'] = true; handleInputUpdate_old('keydown', 'p', { preventDefault: () => {} }); handleInputUpdate({ type: 'keydown', key: 'p' });", sandbox);
+
+    // 新しいshapeが追加されたか確認
+    const shapes = vm.runInContext("state.shapes", sandbox);
+    const polylineShape = Object.values(shapes).find(s => s.type === 'polyline');
+    if (!polylineShape) {
+        throw new Error('Expected polyline shape to be created, but none found');
+    }
+
+    if (polylineShape.points.length < 2) {
+        throw new Error(`Expected polyline points length to be >= 2, got ${polylineShape.points.length}`);
+    }
+
+    console.log('✅ test_node.js: Raster to polyline parsing test passed!');
+} catch (err) {
+    console.error('❌ test_node.js: Raster to polyline test failed!', err);
+    process.exit(1);
+}
+
 console.log('🎉 All clean unit tests passed successfully!');
 process.exit(0);
