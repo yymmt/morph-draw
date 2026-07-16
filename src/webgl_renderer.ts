@@ -387,3 +387,6 @@ function renderPatternWebGL(positions, textureName) {
 (window as any).generateStrokeCoonsPatchMesh = generateStrokeCoonsPatchMesh;
 (window as any).renderPatternWebGL = renderPatternWebGL;
 
+export {};
+
+

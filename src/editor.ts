@@ -2272,4 +2272,7 @@ function smoothPath(path, iterations = 2) {
 (window as any).addShapeAt = addShapeAt;
 (window as any).createWrap = createWrap;
 
+export {};
+
+
 

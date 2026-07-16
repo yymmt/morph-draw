@@ -6,7 +6,8 @@ const path = require('path');
 const cleanTsCode = (code) => {
     return code
         .replace(/\s+as\s+any/g, '')
-        .replace(/^import\s+['"].*?['"];?/gm, '');
+        .replace(/^import\s+['"].*?['"];?/gm, '')
+        .replace(/^export\s+.*?;?/gm, '');
 };
 
 // mdmath.ts のコードを読み込む

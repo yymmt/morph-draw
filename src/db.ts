@@ -648,3 +648,6 @@ function renderLayerList() {
 (window as any).renderLayerList = renderLayerList;
 (window as any).switchView = switchView;
 
+export {};
+
+

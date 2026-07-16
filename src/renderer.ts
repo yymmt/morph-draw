@@ -539,3 +539,6 @@ function renderGuides(id, container) {
 (window as any).rasterizeInactiveLayers = rasterizeInactiveLayers;
 (window as any).renderMinimap = renderMinimap;
 (window as any).renderGuides = renderGuides;
+
+export {};
+
