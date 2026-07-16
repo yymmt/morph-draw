@@ -908,18 +908,14 @@ async function handleInputUpdate(event) {
     }
 
     if (event.type === 'keyup' && movePressMap) {
-        const key = event.key;
-        const config = movePressMap[key];
+        const key = event.key.toLowerCase();
+        const config = movePressMap[key] || movePressMap[key.toUpperCase()];
+        if (config && typeof config.keyup === 'function') {
+            config.keyup();
+        }
         if (state.pushHistoryOnKeyUp) {
             state.pushHistoryOnKeyUp = false;
             pushHistory();
-        }
-        if (key.toLowerCase() === 'x') {
-            if (state.currentDraftStroke && state.currentDraftStroke.length > 2) {
-                if (!state.draftStrokes) state.draftStrokes = [];
-                state.draftStrokes.push(state.currentDraftStroke);
-            }
-            state.currentDraftStroke = null;
         }
     }
 

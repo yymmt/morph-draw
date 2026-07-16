@@ -268,6 +268,13 @@ const interactionMap = {
                         draftCtx.stroke();
                     }
                 },
+                keyup: () => {
+                    if (state.currentDraftStroke && state.currentDraftStroke.length > 2) {
+                        if (!state.draftStrokes) state.draftStrokes = [];
+                        state.draftStrokes.push(state.currentDraftStroke);
+                    }
+                    state.currentDraftStroke = null;
+                },
                 needsRender: true
             },
         },
