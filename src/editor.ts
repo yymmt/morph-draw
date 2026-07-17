@@ -2342,109 +2342,298 @@ function resamplePathBySpacing(points, spacing) {
     return res;
 }
 
-function getExtendedPolyline(pointsB) {
-    if (pointsB.length < 2) return pointsB.map(p => ({ ...p, isExtended: false }));
-    const extLength = 15;
-    const extStep = 10; // 固定値（10px）にすることで、点密度が高くても十分な延長線を確保する
-    
-    // 始点側の延長 [0] -> [1] の向きの逆方向
-    const dxStart = pointsB[0].x - pointsB[1].x;
-    const dyStart = pointsB[0].y - pointsB[1].y;
-    const distStart = Math.hypot(dxStart, dyStart);
-    const uStart = { x: distStart > 0 ? dxStart / distStart : 0, y: distStart > 0 ? dyStart / distStart : 0 };
 
-    const startExtensions = [];
-    for (let i = extLength; i >= 1; i--) {
-        startExtensions.push({
-            x: pointsB[0].x + uStart.x * extStep * i,
-            y: pointsB[0].y + uStart.y * extStep * i,
-            isExtended: true
-        });
-    }
-
-    // 終点側の延長 [n] -> [n-1] の向きの逆方向
-    const n = pointsB.length - 1;
-    const dxEnd = pointsB[n].x - pointsB[n-1].x;
-    const dyEnd = pointsB[n].y - pointsB[n-1].y;
-    const distEnd = Math.hypot(dxEnd, dyEnd);
-    const uEnd = { x: distEnd > 0 ? dxEnd / distEnd : 0, y: distEnd > 0 ? dyEnd / distEnd : 0 };
-
-    const endExtensions = [];
-    for (let i = 1; i <= extLength; i++) {
-        endExtensions.push({
-            x: pointsB[n].x + uEnd.x * extStep * i,
-            y: pointsB[n].y + uEnd.y * extStep * i,
-            isExtended: true
-        });
-    }
-
-    return [
-        ...startExtensions,
-        ...pointsB.map(p => ({ ...p, isExtended: false })),
-        ...endExtensions
-    ];
-}
 
 function deformPolyline(pointsA, pointsB, k) {
-    const fullB = getExtendedPolyline(pointsB);
-    
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    pointsB.forEach(p => {
-        if (p.x < minX) minX = p.x;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y < minY) minY = p.y;
-        if (p.y > maxY) maxY = p.y;
-    });
-    const centerB = {
-        x: (minX + maxX) / 2,
-        y: (minY + maxY) / 2
-    };
-    const sigmaCenter = state.deformSettings.sigmaCenter;
-    const sigmaDist = state.deformSettings.sigmaDist;
+    if (pointsB.length < 2 || pointsA.length === 0) return pointsA;
 
-    const Sb = fullB[0];
-    const Eb = fullB[fullB.length - 1];
-    const vbx = Eb.x - Sb.x;
-    const vby = Eb.y - Sb.y;
-    const lenB = Math.hypot(vbx, vby);
-    const ubx = lenB > 0 ? vbx / lenB : 0;
-    const uby = lenB > 0 ? vby / lenB : 1;
+    const dl = state.deformSettings?.dl ?? 100;
 
-    return pointsA.map((pa) => {
-        // (a) Bの基準スパン上に pa を投影してパラメータ t (0〜1) を得る
-        const dx_proj = pa.x - Sb.x;
-        const dy_proj = pa.y - Sb.y;
-        let t_proj = lenB > 0 ? (dx_proj * ubx + dy_proj * uby) / lenB : 0.5;
-        t_proj = Math.max(0, Math.min(1, t_proj)); // 0〜1にクランプ
+    // --- 1. Aが閉じた（ループしている）形状かを判定 ---
+    // 始点と終点の距離が非常に近い場合、ループとする
+    const pFirstA = pointsA[0];
+    const pLastA = pointsA[pointsA.length - 1];
+    const isClosedA = Math.hypot(pFirstA.x - pLastA.x, pFirstA.y - pLastA.y) < 15.0;
 
-        // 小数インデックスから線形補間で滑らかな座標を得る
-        const floatIdx = t_proj * (fullB.length - 1);
-        const idx0 = Math.floor(floatIdx);
-        const idx1 = Math.min(fullB.length - 1, idx0 + 1);
-        const frac = floatIdx - idx0;
+    // --- 2. Aの巡回シフト（スライス）処理の実行 (isClosedA の場合) ---
+    // 円の始終点境界でのクランプ歪みを防ぐため、下書きに最接近する位置を中心に A をローテートさせます。
+    // 方向判定（インデックスの正負）を行うより先に実行する必要があります。
+    let workingA = [...pointsA];
+    let shiftOffset = 0;
 
-        const p0 = fullB[idx0];
-        const p1 = fullB[idx1];
-
-        const closestPb = {
-            x: p0.x * (1 - frac) + p1.x * frac,
-            y: p0.y * (1 - frac) + p1.y * frac
-        };
-        const minDist = Math.hypot(pa.x - closestPb.x, pa.y - closestPb.y);
-
-        // (b) 影響度（ウェイト）の計算
-        let distFromCenterB = 0;
-        if (state.deformSettings && state.deformSettings.deformDecayMode === 'distance') {
-            distFromCenterB = Math.hypot(pa.x - centerB.x, pa.y - centerB.y);
-        } else {
-            distFromCenterB = Math.hypot(closestPb.x - centerB.x, closestPb.y - centerB.y);
+    if (isClosedA) {
+        // Bの中点に最も近いAのインデックスをシフトの中心とする
+        const midB = pointsB[Math.floor(pointsB.length / 2)];
+        let ac = 0;
+        let minDistMid = Infinity;
+        for (let i = 0; i < pointsA.length; i++) {
+            const d = Math.hypot(midB.x - pointsA[i].x, midB.y - pointsA[i].y);
+            if (d < minDistMid) {
+                minDistMid = d;
+                ac = i;
+            }
         }
-        const wCenter = Math.exp(-(distFromCenterB * distFromCenterB) / (2 * sigmaCenter * sigmaCenter));
-        const wDist = Math.exp(-(minDist * minDist) / (2 * sigmaDist * sigmaDist));
-        const weight = wCenter * wDist;
 
-        // (c) 座標の変形
+        // acが配列のほぼ中心になるように、ac - N/2 分だけ左に巡回シフト（ローテート）する
+        const N = pointsA.length;
+        shiftOffset = (ac - Math.floor(N / 2) + N) % N;
+
+        if (shiftOffset > 0) {
+            workingA = [];
+            for (let i = 0; i < N; i++) {
+                workingA.push(pointsA[(i + shiftOffset) % N]);
+            }
+        }
+    }
+
+    // --- 3. Bの各端点が【ローテート補正後の workingA】のどこに一番近いかを検出して方向（描き順）を判定・反転 ---
+    let idxStartA = 0;
+    let minDistStart = Infinity;
+    let idxEndA = 0;
+    let minDistEnd = Infinity;
+    for (let i = 0; i < workingA.length; i++) {
+        const dS = Math.hypot(pointsB[0].x - workingA[i].x, pointsB[0].y - workingA[i].y);
+        if (dS < minDistStart) {
+            minDistStart = dS;
+            idxStartA = i;
+        }
+        const dE = Math.hypot(pointsB[pointsB.length - 1].x - workingA[i].x, pointsB[pointsB.length - 1].y - workingA[i].y);
+        if (dE < minDistEnd) {
+            minDistEnd = dE;
+            idxEndA = i;
+        }
+    }
+
+    // Bの描き順が workingA と逆（負の相関）なら、pointsBを一時コピーして反転する
+    let workingB = [...pointsB];
+    if (idxStartA > idxEndA) {
+        workingB.reverse();
+    }
+
+    // --- 4. 補正された workingA / workingB に対し、検証済みの変形ロジックを実行 ---
+
+    // Aの各点の道のりを計算
+    const distsA = [0];
+    for (let i = 1; i < workingA.length; i++) {
+        distsA.push(distsA[i - 1] + Math.hypot(workingA[i].x - workingA[i - 1].x, workingA[i].y - workingA[i - 1].y));
+    }
+    const totalLenA = distsA[distsA.length - 1];
+
+    // Bの始点に最も近いA上の点を探す
+    let minIndexStart = 0;
+    let minDistStart2 = Infinity;
+    for (let i = 0; i < workingA.length; i++) {
+        const d = Math.hypot(workingB[0].x - workingA[i].x, workingB[0].y - workingA[i].y);
+        if (d < minDistStart2) {
+            minDistStart2 = d;
+            minIndexStart = i;
+        }
+    }
+
+    // Aの minIndexStart から逆方向に dl 離れるまで走査して targetIndexStart を決定（物理的な点にスナップ）
+    let currentDistStart = 0;
+    let targetIndexStart = minIndexStart;
+    for (let i = minIndexStart; i > 0; i--) {
+        const step = Math.hypot(workingA[i].x - workingA[i - 1].x, workingA[i].y - workingA[i - 1].y);
+        currentDistStart += step;
+        targetIndexStart = i - 1;
+        if (currentDistStart >= dl) break;
+    }
+    
+    // targetPtStart の決定：もしAの端（0）に達した場合は、残りの距離だけ接線方向に外側へ仮想延長する
+    let targetPtStart = workingA[targetIndexStart];
+    if (targetIndexStart === 0 && currentDistStart < dl && workingA.length >= 2) {
+        const rem = dl - currentDistStart;
+        const dx = workingA[0].x - workingA[1].x;
+        const dy = workingA[0].y - workingA[1].y;
+        const len = Math.hypot(dx, dy);
+        if (len > 0) {
+            targetPtStart = {
+                x: workingA[0].x + (dx / len) * rem,
+                y: workingA[0].y + (dy / len) * rem
+            };
+        }
+    }
+
+    // Bの終点に最も近いA上の点を探す
+    const nB = workingB.length - 1;
+    let minIndexEnd = 0;
+    let minDistEnd2 = Infinity;
+    for (let i = 0; i < workingA.length; i++) {
+        const d = Math.hypot(workingB[nB].x - workingA[i].x, workingB[nB].y - workingA[i].y);
+        if (d < minDistEnd2) {
+            minDistEnd2 = d;
+            minIndexEnd = i;
+        }
+    }
+
+    // Aの minIndexEnd から順方向に dl 離れるまで走査して targetIndexEnd を決定
+    let currentDistEnd = 0;
+    let targetIndexEnd = minIndexEnd;
+    for (let i = minIndexEnd; i < workingA.length - 1; i++) {
+        const step = Math.hypot(workingA[i + 1].x - workingA[i].x, workingA[i + 1].y - workingA[i].y);
+        currentDistEnd += step;
+        targetIndexEnd = i + 1;
+        if (currentDistEnd >= dl) break;
+    }
+    
+    // targetPtEnd の決定：もしAの端（N-1）に達した場合は、残りの距離だけ接線方向に外側へ仮想延長する
+    let targetPtEnd = workingA[targetIndexEnd];
+    const N = workingA.length;
+    if (targetIndexEnd === N - 1 && currentDistEnd < dl && N >= 2) {
+        const rem = dl - currentDistEnd;
+        const dx = workingA[N - 1].x - workingA[N - 2].x;
+        const dy = workingA[N - 1].y - workingA[N - 2].y;
+        const len = Math.hypot(dx, dy);
+        if (len > 0) {
+            targetPtEnd = {
+                x: workingA[N - 1].x + (dx / len) * rem,
+                y: workingA[N - 1].y + (dy / len) * rem
+            };
+        }
+    }
+
+    // --- Bの始点側・終点側の接線ベクトル取得 ---
+    const extLength = 15;
+
+    // 始点側延長
+    const dxStartB = workingB[0].x - workingB[1].x;
+    const dyStartB = workingB[0].y - workingB[1].y;
+    const distStart = Math.hypot(dxStartB, dyStartB);
+    const uStartB = { x: dxStartB / distStart, y: dyStartB / distStart };
+
+    const idxA_S1 = targetIndexStart;
+    const idxA_S2 = Math.min(workingA.length - 1, idxA_S1 + 1);
+    const dxStartA = workingA[idxA_S1].x - workingA[idxA_S2].x;
+    const dyStartA = workingA[idxA_S1].y - workingA[idxA_S2].y;
+    const distStartA = Math.hypot(dxStartA, dyStartA);
+    const uStartA = distStartA > 0 ? { x: dxStartA / distStartA, y: dyStartA / distStartA } : uStartB;
+
+    const distToTargetStart = Math.hypot(targetPtStart.x - workingB[0].x, targetPtStart.y - workingB[0].y);
+    const stepDistStart = distToTargetStart / extLength;
+
+    const startExtensions = [];
+    let currPtStart = { x: workingB[0].x, y: workingB[0].y };
+    for (let i = 1; i <= extLength; i++) {
+        const t = i / extLength;
+        const ux = uStartB.x * (1 - t) + uStartA.x * t;
+        const uy = uStartB.y * (1 - t) + uStartA.y * t;
+        const uLen = Math.hypot(ux, uy);
+        const uBlend = { x: ux / uLen, y: uy / uLen };
+
+        const nextX = currPtStart.x + uBlend.x * stepDistStart;
+        const nextY = currPtStart.y + uBlend.y * stepDistStart;
+
+        const blendT = t * t;
+        currPtStart = {
+            x: nextX * (1 - blendT) + targetPtStart.x * blendT,
+            y: nextY * (1 - blendT) + targetPtStart.y * blendT
+        };
+
+        startExtensions.push({
+            x: currPtStart.x,
+            y: currPtStart.y,
+            isExtended: true
+        });
+    }
+    startExtensions.reverse();
+
+    // 終点側延長
+    const dxEndB = workingB[nB].x - workingB[nB - 1].x;
+    const dyEndB = workingB[nB].y - workingB[nB - 1].y;
+    const distEnd = Math.hypot(dxEndB, dyEndB);
+    const uEndB = { x: dxEndB / distEnd, y: dyEndB / distEnd };
+
+    const idxA_E1 = targetIndexEnd;
+    const idxA_E2 = Math.max(0, idxA_E1 - 1);
+    const dxEndA = workingA[idxA_E1].x - workingA[idxA_E2].x;
+    const dyEndA = workingA[idxA_E1].y - workingA[idxA_E2].y;
+    const distEndA = Math.hypot(dxEndA, dyEndA);
+    const uEndA = distEndA > 0 ? { x: dxEndA / distEndA, y: dyEndA / distEndA } : uEndB;
+
+    const distToTargetEnd = Math.hypot(targetPtEnd.x - workingB[nB].x, targetPtEnd.y - workingB[nB].y);
+    const stepDistEnd = distToTargetEnd / extLength;
+
+    const endExtensions = [];
+    let currPtEnd = { x: workingB[nB].x, y: workingB[nB].y };
+    for (let i = 1; i <= extLength; i++) {
+        const t = i / extLength;
+        const ux = uEndB.x * (1 - t) + uEndA.x * t;
+        const uy = uEndB.y * (1 - t) + uEndA.y * t;
+        const uLen = Math.hypot(ux, uy);
+        const uBlend = { x: ux / uLen, y: uy / uLen };
+
+        const nextX = currPtEnd.x + uBlend.x * stepDistEnd;
+        const nextY = currPtEnd.y + uBlend.y * stepDistEnd;
+
+        const blendT = t * t;
+        currPtEnd = {
+            x: nextX * (1 - blendT) + targetPtEnd.x * blendT,
+            y: nextY * (1 - blendT) + targetPtEnd.y * blendT
+        };
+
+        endExtensions.push({
+            x: currPtEnd.x,
+            y: currPtEnd.y,
+            isExtended: true
+        });
+    }
+
+    const fullB = [...startExtensions, ...workingB.map(p => ({ ...p, isExtended: false })), ...endExtensions];
+
+    const distsFullB = [];
+    let accumulated = 0;
+    distsFullB.push(0);
+    for (let i = 1; i < fullB.length; i++) {
+        const step = Math.hypot(fullB[i].x - fullB[i - 1].x, fullB[i].y - fullB[i - 1].y);
+        accumulated += step;
+        distsFullB.push(accumulated);
+    }
+    const totalLenB = distsFullB[distsFullB.length - 1];
+
+    const sA_targetStart = distsA[targetIndexStart];
+    const sA_targetEnd = distsA[targetIndexEnd];
+    const activeLenA = sA_targetEnd - sA_targetStart;
+
+    const movedWorkingA = workingA.map((pa, idx) => {
+        const sA = distsA[idx];
+        let closestPb = { x: pa.x, y: pa.y };
+        let weight = 0.0;
+
+        if (idx < targetIndexStart) {
+            weight = 0.0;
+        } else if (idx > targetIndexEnd) {
+            weight = 0.0;
+        } else {
+            weight = 1.0;
+        }
+
+        if (weight > 0.0) {
+            const rawRatio = activeLenA > 0 ? (sA - sA_targetStart) / activeLenA : 0.5;
+            const ratio = Math.max(0, Math.min(1, rawRatio));
+            const targetS_B = ratio * totalLenB;
+
+            let idx0 = 0;
+            let idx1 = 0;
+            let frac = 0;
+            for (let i = 0; i < distsFullB.length - 1; i++) {
+                if (targetS_B >= distsFullB[i] && targetS_B <= distsFullB[i + 1]) {
+                    idx0 = i;
+                    idx1 = i + 1;
+                    const span = distsFullB[idx1] - distsFullB[idx0];
+                    frac = span > 0 ? (targetS_B - distsFullB[idx0]) / span : 0;
+                    break;
+                }
+            }
+
+            const p0 = fullB[idx0];
+            const p1 = fullB[idx1];
+            closestPb = {
+                x: p0.x * (1 - frac) + p1.x * frac,
+                y: p0.y * (1 - frac) + p1.y * frac
+            };
+        }
+
         const dx = closestPb.x - pa.x;
         const dy = closestPb.y - pa.y;
 
@@ -2453,28 +2642,40 @@ function deformPolyline(pointsA, pointsB, k) {
             y: pa.y + k * weight * dy
         };
     });
+
+    // --- 4.5 境界点（targetIndexStart, targetIndexEnd）の折れ曲がり（段差）を、前後隣接点の中間値でスムーズ補正 ---
+    if (targetIndexStart > 0 && targetIndexStart < movedWorkingA.length - 1) {
+        movedWorkingA[targetIndexStart] = {
+            x: (movedWorkingA[targetIndexStart - 1].x + movedWorkingA[targetIndexStart + 1].x) / 2,
+            y: (movedWorkingA[targetIndexStart - 1].y + movedWorkingA[targetIndexStart + 1].y) / 2
+        };
+    }
+    if (targetIndexEnd > 0 && targetIndexEnd < movedWorkingA.length - 1) {
+        movedWorkingA[targetIndexEnd] = {
+            x: (movedWorkingA[targetIndexEnd - 1].x + movedWorkingA[targetIndexEnd + 1].x) / 2,
+            y: (movedWorkingA[targetIndexEnd - 1].y + movedWorkingA[targetIndexEnd + 1].y) / 2
+        };
+    }
+
+    // --- 5. 巡回シフトされた結果を元の順序へ戻して返却 ---
+    if (isClosedA && shiftOffset > 0) {
+        const N = pointsA.length;
+        const originalMoved = new Array(N);
+        for (let i = 0; i < N; i++) {
+            originalMoved[(i + shiftOffset) % N] = movedWorkingA[i];
+        }
+        return originalMoved;
+    }
+
+    return movedWorkingA;
 }
 
 function syncDeformSlidersFromState() {
-    const centerSlider = getDom('#slider-sigma-center');
-    const centerLabel = getDom('#val-sigma-center');
-    if (centerSlider && state.deformSettings) {
-        centerSlider.value = String(state.deformSettings.sigmaCenter);
-        if (centerLabel) centerLabel.textContent = String(state.deformSettings.sigmaCenter);
-    }
-
-    const distSlider = getDom('#slider-sigma-dist');
-    const distLabel = getDom('#val-sigma-dist');
-    if (distSlider && state.deformSettings) {
-        distSlider.value = String(state.deformSettings.sigmaDist);
-        if (distLabel) distLabel.textContent = String(state.deformSettings.sigmaDist);
-    }
-
-    if (state.deformSettings && state.deformSettings.deformDecayMode) {
-        const radios = document.getElementsByName('deform-decay-mode');
-        radios.forEach(radio => {
-            (radio as any).checked = ((radio as any).value === state.deformSettings.deformDecayMode);
-        });
+    const dlSlider = getDom('#slider-deform-dl');
+    const dlLabel = getDom('#val-deform-dl');
+    if (dlSlider && state.deformSettings) {
+        dlSlider.value = String(state.deformSettings.dl ?? 100);
+        if (dlLabel) dlLabel.textContent = String(state.deformSettings.dl ?? 100);
     }
 }
 

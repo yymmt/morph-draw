@@ -166,23 +166,8 @@
                     <!-- Common Settings Tab -->
                     <div class="settings-tab-content" id="tab-common">
                         <div class="settings-group">
-                            <label class="settings-label" for="slider-sigma-center">下書き端での減衰 (sigmaCenter): <span id="val-sigma-center" style="color: #2196F3; font-weight: bold;">120</span></label>
-                            <input id="slider-sigma-center" type="range" min="10" max="300" step="5" value="120" style="width: 100%;">
-                        </div>
-                        <div class="settings-group">
-                            <span class="settings-label" style="display: block; margin-bottom: 4px;">減衰の基準となる距離:</span>
-                            <div style="display: flex; gap: 16px; align-items: center; margin-top: 4px;">
-                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; color: var(--text-color);">
-                                    <input type="radio" name="deform-decay-mode" value="projection" checked style="cursor: pointer;"> 投影軸上の距離
-                                </label>
-                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; color: var(--text-color);">
-                                    <input type="radio" name="deform-decay-mode" value="distance" style="cursor: pointer;"> 直線距離
-                                </label>
-                            </div>
-                        </div>
-                        <div class="settings-group">
-                            <label class="settings-label" for="slider-sigma-dist">距離による反応限界 (sigmaDist): <span id="val-sigma-dist" style="color: #2196F3; font-weight: bold;">1000</span></label>
-                            <input id="slider-sigma-dist" type="range" min="100" max="3000" step="50" value="1000" style="width: 100%;">
+                            <label class="settings-label" for="slider-deform-dl">延長距離 (dl): <span id="val-deform-dl" style="color: #2196F3; font-weight: bold;">100</span></label>
+                            <input id="slider-deform-dl" type="range" min="10" max="300" step="5" value="100" style="width: 100%;">
                         </div>
                     </div>
                 </div>

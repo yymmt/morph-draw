@@ -319,7 +319,7 @@ function openDrawing(id) {
             state.canvas.width = 800;
             state.canvas.height = 600;
         }
-        state.deformSettings = data.deformSettings || { sigmaCenter: 120, sigmaDist: 1000 };
+        state.deformSettings = data.deformSettings || { dl: 100 };
         const widthInput = getDom('#input-canvas-width');
         const heightInput = getDom('#input-canvas-height');
         if (widthInput && heightInput) {
@@ -490,7 +490,7 @@ function startNewDrawing(type = 'canvas') {
 
     state.canvas.width = 800;
     state.canvas.height = 600;
-    state.deformSettings = { sigmaCenter: 120, sigmaDist: 1000 };
+    state.deformSettings = { dl: 100 };
     const widthInput = getDom('#input-canvas-width');
     const heightInput = getDom('#input-canvas-height');
     if (widthInput && heightInput) {

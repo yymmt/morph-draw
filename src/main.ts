@@ -174,39 +174,18 @@ function initEvents() {
         };
     }
 
-    const centerSlider = getDom('#slider-sigma-center');
-    if (centerSlider) {
-        centerSlider.oninput = () => {
-            const val = parseInt(centerSlider.value, 10);
-            state.deformSettings.sigmaCenter = val;
-            const label = getDom('#val-sigma-center');
+    const dlSlider = getDom('#slider-deform-dl');
+    if (dlSlider) {
+        dlSlider.oninput = () => {
+            const val = parseInt(dlSlider.value, 10);
+            state.deformSettings.dl = val;
+            const label = getDom('#val-deform-dl');
             if (label) label.textContent = String(val);
         };
-        centerSlider.onchange = () => {
+        dlSlider.onchange = () => {
             saveDrawing();
         };
     }
-
-    const distSlider = getDom('#slider-sigma-dist');
-    if (distSlider) {
-        distSlider.oninput = () => {
-            const val = parseInt(distSlider.value, 10);
-            state.deformSettings.sigmaDist = val;
-            const label = getDom('#val-sigma-dist');
-            if (label) label.textContent = String(val);
-        };
-        distSlider.onchange = () => {
-            saveDrawing();
-        };
-    }
-
-    const decayRadios = document.getElementsByName('deform-decay-mode');
-    decayRadios.forEach(radio => {
-        radio.onchange = (e) => {
-            state.deformSettings.deformDecayMode = (e.target as any).value;
-            saveDrawing();
-        };
-    });
 
     getDom('#btn-add-layer').onclick = () => {
         addLayer();
