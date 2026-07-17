@@ -105,6 +105,7 @@ declare global {
         handleTSlidePattern: (ctx: any) => void;
         handleTMovePattern: (ctx: any) => void;
         stateReplacer: (key: string, value: any) => any;
+        __debug__: any;
     }
 
     const state: any;

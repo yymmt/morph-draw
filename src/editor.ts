@@ -1014,14 +1014,16 @@ function findClosestSamplePoint(pt) {
     });
 
     let closest = null, minD = 25;
-    for (const [sid, shape] of Object.entries(state.shapes)) {
+    for (const [sid, shapeObj] of Object.entries(state.shapes)) {
+        const shape = shapeObj as any;
         if (!shape.bezierIds) continue;
         if (!visibleShapeIds.has(sid)) continue;
 
-        shape.bezierIds.forEach(bid => {
+        shape.bezierIds.forEach((bid: any) => {
             const b = state.beziers[bid];
             if (!b) return;
-            Object.entries(b.samplePointByT).forEach(([tStr, p]) => {
+            Object.entries(b.samplePointByT).forEach(([tStr, pVal]) => {
+                const p = pVal as any;
                 const d = Math.hypot(p.x - pt.x, p.y - pt.y);
                 if (d < minD) { minD = d; closest = { shapeId: sid, bezierId: bid, t: parseFloat(tStr), pt: p }; }
             });
@@ -1250,13 +1252,13 @@ function updateBezier(id) {
     sample(0, 1);
 
     const pts = Object.values(bez.samplePointByT);
-    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    const xs = pts.map((p: any) => p.x), ys = pts.map((p: any) => p.y);
     bez.boundingBox = {
         x: Math.min(...xs), y: Math.min(...ys),
         w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys)
     };
 
-    Object.values(state.shapes).forEach(shape => {
+    Object.values(state.shapes).forEach((shape: any) => {
         if (shape.bezierIds && shape.bezierIds.includes(id)) {
             markShapeDirty(shape.id);
         }
@@ -1267,7 +1269,7 @@ function updateBezier(id) {
  * Loops and resolves dependent connector beziers ordering, matching endpoints coordinates.
  */
 function resolveBezierDependencies() {
-    Object.values(state.shapes).forEach(shape => {
+    Object.values(state.shapes).forEach((shape: any) => {
         if (shape && shape.name && shape.name.startsWith('wrap') && shape.bezierIds && shape.bezierIds.length > 0) {
             const N = shape.bezierIds.length;
             for (let i = 0; i < N; i++) {
@@ -1394,7 +1396,7 @@ function addShapeAt(type, x, y) {
             bIds.push(bId);
         }
     }
-    const count = Object.values(state.shapes).filter(s => s.name && s.name.startsWith(type)).length + 1;
+    const count = Object.values(state.shapes).filter((s: any) => s.name && s.name.startsWith(type)).length + 1;
     const shape = {
         id, type: 'bezier-group', name: `${type} ${count}`, bezierIds: bIds, props: { x, y, r: type === 'circle' ? r : undefined, a: type === 'circle' ? 0 : undefined },
         style: { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true },
@@ -1426,7 +1428,7 @@ function createWrap() {
         return;
     }
     const [id1, id2] = targets;
-    const shape1 = state.shapes[id1], shape2 = state.shapes[id2];
+    const shape1 = state.shapes[id1 as any] as any, shape2 = state.shapes[id2 as any] as any;
     if (!shape1 || !shape2) return;
 
     const src1_up_bezier = shape1.bezierIds[0];
@@ -1497,7 +1499,7 @@ function createWrap() {
     };
     bIds.push(bId4);
 
-    const wrapCount = Object.values(state.shapes).filter(s => s.name && s.name.startsWith('wrap')).length + 1;
+    const wrapCount = Object.values(state.shapes).filter((s: any) => s.name && s.name.startsWith('wrap')).length + 1;
     const wrapShape = {
         id: wrapId,
         type: 'bezier-group',
@@ -2026,7 +2028,8 @@ function updateSelectionByDragRect() {
             for (const bid of shape.bezierIds) {
                 const bez = state.beziers[bid];
                 if (bez && bez.samplePointByT) {
-                    for (const p of Object.values(bez.samplePointByT as any)) {
+                    for (const pVal of Object.values(bez.samplePointByT)) {
+                        const p = pVal as any;
                         if (p.x >= xMin && p.x <= xMax && p.y >= yMin && p.y <= yMax) {
                             overlaps = true;
                             break;

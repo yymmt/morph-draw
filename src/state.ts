@@ -435,7 +435,10 @@ const getMainCanvasSVGVector = () => getSVGVector(state.input.dPointer, getDom('
  * Checks if current active element is an editable input or textarea.
  * @returns {boolean}
  */
-const isFocusEditable = () => !!(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable));
+const isFocusEditable = () => {
+    const el = document.activeElement as HTMLElement | null;
+    return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable));
+};
 
 /**
  * Scans existing IDs to initialize the ID incrementer counter.
