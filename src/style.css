@@ -256,6 +256,13 @@ body {
     cursor: pointer;
 }
 
+#minimap-panel.collapsed #btn-toggle-minimap .bi-chevron-double-right {
+    display: none;
+}
+#minimap-panel:not(.collapsed) #btn-toggle-minimap .bi-chevron-double-left {
+    display: none;
+}
+
 
 
 /* Modal Overlay */
