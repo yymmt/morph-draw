@@ -358,6 +358,39 @@ const interactionMap = {
             },
             '#btn-add-layer': {
                 f: () => addLayer()
+            },
+            '.btn-layer-delete': {
+                f: (e) => {
+                    const id = e.matchedTarget.closest('.layer-item')?.getAttribute('data-id');
+                    if (id) deleteLayer(id);
+                }
+            },
+            '.layer-visibility-btn': {
+                f: (e) => {
+                    const id = e.matchedTarget.closest('.layer-item')?.getAttribute('data-id');
+                    if (id) {
+                        const layer = state.shapes[id];
+                        if (layer) {
+                            layer.visible = !layer.visible;
+                            rasterizeInactiveLayers();
+                            renderCanvas();
+                            pushHistory();
+                        }
+                    }
+                }
+            },
+            '.layer-item': {
+                f: (e) => {
+                    if (e.target.closest('input') || e.target.closest('button') || e.target.closest('.layer-visibility-btn')) return;
+                    const id = e.matchedTarget.getAttribute('data-id');
+                    if (id) {
+                        state.selectedLayerId = id;
+                        state.selectedShapeIds = [];
+                        state.focusedVertex = null;
+                        rasterizeInactiveLayers();
+                        renderCanvas();
+                    }
+                }
             }
         }
     },

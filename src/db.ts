@@ -586,6 +586,8 @@ function renderLayerList() {
     if (!list) return;
     list.innerHTML = '';
 
+    const template = getDom('#tmpl-layer-item') as any;
+
     [...state.scene].reverse().forEach(layerId => {
         const layer = state.shapes[layerId];
         if (!layer || layer.type !== 'layer') return;
@@ -593,51 +595,37 @@ function renderLayerList() {
         const item = newElm('div', {
             className: `layer-item${state.selectedLayerId === layerId ? ' active' : ''}${layer.visible ? '' : ' hidden-layer'}`
         });
+        item.setAttribute('data-id', layerId);
 
-        item.innerHTML = `
-            <div class="layer-info">
-                <span class="layer-visibility-btn"><i class="bi ${layer.visible ? 'bi-eye' : 'bi-eye-slash'}"></i></span>
-                <input class="layer-name-input" type="text" value="${layer.name}">
-            </div>
-            <div class="layer-controls">
-                <button class="layer-control-btn btn-layer-delete"><i class="bi bi-trash"></i></button>
-            </div>
-        `;
-
-        item.onclick = (e) => {
-            if (e.target.closest('input') || e.target.closest('button') || e.target.closest('.layer-visibility-btn')) return;
-            state.selectedLayerId = layerId;
-            state.selectedShapeIds = [];
-            state.focusedVertex = null;
-            rasterizeInactiveLayers();
-            renderCanvas();
-        };
-
-        getDomOf(item, '.layer-visibility-btn').onclick = (e) => {
-            e.stopPropagation();
-            layer.visible = !layer.visible;
-            rasterizeInactiveLayers();
-            renderCanvas();
-            pushHistory();
-        };
-
-        const input = getDomOf(item, '.layer-name-input');
-        input.onblur = () => {
-            if (input.value.trim() !== '') {
-                layer.name = input.value.trim();
-                pushHistory();
-            } else {
-                input.value = layer.name;
+        if (template) {
+            const clone = template.content.cloneNode(true) as any;
+            
+            const visBtn = clone.querySelector('.layer-visibility-btn');
+            if (visBtn) {
+                const icon = visBtn.querySelector('i');
+                if (icon) {
+                    icon.className = `bi ${layer.visible ? 'bi-eye' : 'bi-eye-slash'}`;
+                }
             }
-        };
-        input.onkeydown = (e) => {
-            if (e.key === 'Enter') input.blur();
-        };
 
-        getDomOf(item, '.btn-layer-delete').onclick = (e) => {
-            e.stopPropagation();
-            deleteLayer(layerId);
-        };
+            const input = clone.querySelector('.layer-name-input');
+            if (input) {
+                input.value = layer.name;
+                input.onblur = () => {
+                    if (input.value.trim() !== '') {
+                        layer.name = input.value.trim();
+                        pushHistory();
+                    } else {
+                        input.value = layer.name;
+                    }
+                };
+                input.onkeydown = (e) => {
+                    if (e.key === 'Enter') input.blur();
+                };
+            }
+
+            item.appendChild(clone);
+        }
 
         list.appendChild(item);
     });
