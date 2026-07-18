@@ -352,6 +352,9 @@ const interactionMap = {
                     const tabName = e.target.closest('.settings-tab-btn')?.getAttribute('data-tab');
                     if (tabName) switchSettingsTab(tabName);
                 }
+            },
+            '#btn-save-image-settings': {
+                f: () => saveImageSettings()
             }
         }
     },

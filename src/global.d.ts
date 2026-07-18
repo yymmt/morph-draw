@@ -58,6 +58,7 @@ declare global {
         closeSearchMode: (commit: boolean) => void;
         closeCommandMode: (commit: boolean) => void;
         switchSettingsTab: (tab: string) => void;
+        saveImageSettings: () => void;
         initWebGLPatternRenderer: () => void;
         renderPatternWebGL: (positions: any, name: string) => any;
         generateCoonsPatchMesh: (shape: any) => any;
@@ -167,6 +168,7 @@ declare global {
     const closeSearchMode: (commit: boolean) => void;
     const closeCommandMode: (commit: boolean) => void;
     const switchSettingsTab: (tab: string) => void;
+    const saveImageSettings: () => void;
     const initWebGLPatternRenderer: () => void;
     const renderPatternWebGL: (positions: any, name: string) => any;
     const generateCoonsPatchMesh: (shape: any) => any;

@@ -1000,6 +1000,44 @@ function switchSettingsTab(tabName) {
 }
 
 /**
+ * Saves the current drawing image configurations (name, dimensions) from UI inputs.
+ */
+function saveImageSettings() {
+    const nameInput = getDom('#input-draw-name');
+    const widthInput = getDom('#input-canvas-width');
+    const heightInput = getDom('#input-canvas-height');
+
+    let changed = false;
+
+    if (nameInput && nameInput.value.trim() !== '') {
+        const newName = nameInput.value.trim();
+        if (newName !== state.drawingName) {
+            state.drawingName = newName;
+            changed = true;
+        }
+    }
+
+    if (widthInput && heightInput) {
+        const w = parseInt(widthInput.value, 10);
+        const h = parseInt(heightInput.value, 10);
+        if (w > 0 && h > 0 && (w !== state.canvas.width || h !== state.canvas.height)) {
+            state.canvas.width = w;
+            state.canvas.height = h;
+            resizeOffscreenCanvases();
+            clearAllCaches();
+            rasterizeInactiveLayers();
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        saveDrawing();
+        pushHistory();
+        renderCanvas();
+    }
+}
+
+/**
  * Locates closest sample point on visible canvas geometries to a click position.
  * @param {Object} pt - The target mouse/click coordinate {x, y}.
  * @returns {Object|null} Nearest vertex record details or null.
@@ -2749,6 +2787,7 @@ function handlePolylineDeform() {
 (window as any).handlePolylineDeform = handlePolylineDeform;
 (window as any).syncDeformSlidersFromState = syncDeformSlidersFromState;
 (window as any).handleDDist = handleDDist;
+(window as any).saveImageSettings = saveImageSettings;
 
 export {};
 
