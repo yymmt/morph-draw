@@ -5,7 +5,8 @@ const path = require('path');
 // Helper to strip TS-specific syntax for VM execution
 const cleanTsCode = (code) => {
     return code
-        .replace(/\s+as\s+any/g, '')
+        .replace(/\s+as\s+[A-Za-z0-9_|<>\s*]+/g, '')
+        .replace(/:\s*(?:any|string|number|boolean|any\[\]|string\[\]|number\[\]|HTML[A-Za-z0-9_|]+Element|SVG[A-Za-z0-9_|]+Element|IDBDatabase|Object|Event|Array<[a-zA-Z0-9_]+>)/g, '')
         .replace(/^import\s+['"].*?['"];?/gm, '')
         .replace(/^export\s+.*?;?/gm, '');
 };

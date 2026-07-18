@@ -13,8 +13,6 @@ import './editor';
 import './test';
 import './style.css';
 
-
-
 document.addEventListener('DOMContentLoaded', () => {
     initDB();
     initOffscreenCanvases();
@@ -30,16 +28,6 @@ function initEvents() {
         await saveDrawing();
         loadGallery();
         switchView('gallery');
-    };
-
-    getDom('#btn-toggle-minimap').onclick = () => {
-        const panel = getDom('#minimap-panel');
-        panel.classList.toggle('collapsed');
-        const icon = getDom('#btn-toggle-minimap i');
-        if (icon) {
-            const isCollapsed = panel.classList.contains('collapsed');
-            icon.className = `bi ${isCollapsed ? 'bi-chevron-double-left' : 'bi-chevron-double-right'}`;
-        }
     };
 
     document.body.onclick = (event) => {

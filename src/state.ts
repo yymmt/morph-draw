@@ -336,6 +336,21 @@ const interactionMap = {
                 needsRender: true,
                 pushHistory: true
             }
+        },
+        click_selector: {
+            '#btn-toggle-minimap': {
+                f: () => {
+                    const panel = getDom('#minimap-panel');
+                    if (panel) {
+                        panel.classList.toggle('collapsed');
+                        const icon = getDom('#btn-toggle-minimap i');
+                        if (icon) {
+                            const isCollapsed = panel.classList.contains('collapsed');
+                            icon.className = `bi ${isCollapsed ? 'bi-chevron-double-left' : 'bi-chevron-double-right'}`;
+                        }
+                    }
+                }
+            }
         }
     },
     view_gallery: {
@@ -434,7 +449,7 @@ const getMainCanvasSVGVector = () => getSVGVector(state.input.dPointer, getDom('
  * @returns {boolean}
  */
 const isFocusEditable = () => {
-    const el = document.activeElement as HTMLElement | null;
+    const el = document.activeElement as any;
     return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable));
 };
 
