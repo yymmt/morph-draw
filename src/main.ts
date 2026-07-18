@@ -106,10 +106,6 @@ function initEvents() {
         };
     }
 
-    getDom('#btn-add-layer').onclick = () => {
-        addLayer();
-    };
-
     const searchInput = getDom('#search-input');
     if (searchInput) {
         searchInput.oninput = () => {

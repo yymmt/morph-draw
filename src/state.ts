@@ -355,6 +355,9 @@ const interactionMap = {
             },
             '#btn-save-image-settings': {
                 f: () => saveImageSettings()
+            },
+            '#btn-add-layer': {
+                f: () => addLayer()
             }
         }
     },
