@@ -20,7 +20,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /**
- * Binds DOM elements actions, window resize triggers, pointer movements, and keyboard events onto editor handler pipelines.
+ * Binds global/window events (pointer, keyboard, resize) and routes them via handleInputUpdate/interactionMap.
+ * POLICY: Do NOT bind individual DOM event listeners here directly. Instead, delegate click/input events
+ * to interactionMap to keep UI binding clean and centralized. Edge cases (such as complex inputs) should
+ * be handled with care and centralized where possible.
  */
 function initEvents() {
     document.body.onclick = (event) => {
