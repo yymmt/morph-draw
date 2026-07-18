@@ -882,6 +882,7 @@ async function handleInputUpdate(event) {
             const matchedEl = event.target.closest(selector);
             if (matchedEl) {
                 interaction = clickMap[selector];
+                (event as any).matchedTarget = matchedEl;
                 event.preventDefault();
                 event.stopPropagation();
                 break;

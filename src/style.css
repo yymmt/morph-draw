@@ -110,7 +110,7 @@ body {
 .gallery-card {
     background: white;
     border-radius: 8px;
-    height: 240px;
+    height: 245px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
