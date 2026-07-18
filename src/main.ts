@@ -24,11 +24,6 @@ document.addEventListener('DOMContentLoaded', () => {
  */
 function initEvents() {
 
-    getDom('#btn-back-gallery').onclick = async () => {
-        await saveDrawing();
-        loadGallery();
-        switchView('gallery');
-    };
 
     document.body.onclick = (event) => {
         handleInputUpdate(event);

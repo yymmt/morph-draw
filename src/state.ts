@@ -340,6 +340,9 @@ const interactionMap = {
         click_selector: {
             '#btn-toggle-minimap': {
                 f: () => toggleClassDom('#minimap-panel', 'collapsed')
+            },
+            '#btn-back-gallery': {
+                f: (e) => handleQuitToGallery(e)
             }
         }
     },
