@@ -93,12 +93,6 @@ function initEvents() {
     });
 
 
-    getDoms('.settings-tab-btn').forEach(btn => {
-        btn.onclick = () => {
-            const tabName = btn.getAttribute('data-tab');
-            switchSettingsTab(tabName);
-        };
-    });
 
     const drawNameInput = getDom('#input-draw-name');
     if (drawNameInput) {

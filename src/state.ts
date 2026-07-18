@@ -346,6 +346,12 @@ const interactionMap = {
             },
             '#btn-toggle-settings': {
                 f: () => toggleClassDom('#settings-panel', 'collapsed')
+            },
+            '.settings-tab-btn': {
+                f: (e) => {
+                    const tabName = e.target.closest('.settings-tab-btn')?.getAttribute('data-tab');
+                    if (tabName) switchSettingsTab(tabName);
+                }
             }
         }
     },
