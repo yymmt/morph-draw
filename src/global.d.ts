@@ -28,6 +28,8 @@ declare global {
         saveDrawing: () => Promise<void>;
         loadGallery: () => void;
         switchView: (viewId: string) => void;
+        openDrawing: (id: string) => void;
+        deleteDrawing: (id: string, e: any) => Promise<void>;
         addLayer: () => void;
         deleteLayer: (id: string) => void;
         renderLayerList: () => void;
@@ -137,6 +139,8 @@ declare global {
     const saveDrawing: () => Promise<void>;
     const loadGallery: () => void;
     const switchView: (viewId: string) => void;
+    const openDrawing: (id: string) => void;
+    const deleteDrawing: (id: string, e: any) => Promise<void>;
     const addLayer: () => void;
     const deleteLayer: (id: string) => void;
     const renderLayerList: () => void;

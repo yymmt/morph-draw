@@ -118,6 +118,10 @@ body {
     cursor: pointer;
 }
 
+#gallery-list-import .gallery-card {
+    cursor: default;
+}
+
 .card-preview {
     flex: 1;
     background: #eee;

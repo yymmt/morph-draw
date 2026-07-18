@@ -368,6 +368,26 @@ const interactionMap = {
             ['#btn-new-pattern']: { f: () => startNewDrawing('pattern') },
             ['#btn-new-import']: { f: () => importImageFile() },
             ['body']: { f: () => addClassDom('#new-draw-menu', 'hidden') },
+            ['.btn-card-delete']: {
+                f: (e) => {
+                    const btn = e.target.closest('.btn-card-delete');
+                    const id = btn?.getAttribute('data-id');
+                    if (id) {
+                        deleteDrawing(id, e);
+                    }
+                }
+            },
+            ['.gallery-card']: {
+                f: (e) => {
+                    if (e.target.closest('.btn-card-delete')) return;
+                    const card = e.target.closest('.gallery-card');
+                    const id = card?.getAttribute('data-id');
+                    const isImport = card?.closest('#gallery-list-import');
+                    if (id && !isImport) {
+                        openDrawing(id);
+                    }
+                }
+            }
         }
     }
 };

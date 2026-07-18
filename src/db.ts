@@ -225,8 +225,11 @@ function renderGalleryGrid(items) {
     if (listPattern) listPattern.innerHTML = '';
     if (listImport) listImport.innerHTML = '';
 
+    const template = getDom('#tmpl-gallery-card') as any;
+
     items.sort((a, b) => b.updatedAt - a.updatedAt).forEach(item => {
         const card = newElm('div', { className: 'gallery-card' });
+        card.setAttribute('data-id', item.id);
 
         let imgSrc = '';
         if (item.preview) {
@@ -238,30 +241,28 @@ function renderGalleryGrid(items) {
             }
         }
 
-        card.innerHTML = `
-            <div class="card-preview">
-                ${imgSrc ? `<img src="${imgSrc}" alt="preview">` : ''}
-            </div>
-            <div class="card-info">
-                <div class="card-title-group">
-                    <span class="card-name">${item.name || ('Drawing ' + item.id)}</span>
-                    <span class="card-id-badge">${item.id}</span>
-                </div>
-                <button class="btn-card-delete" data-id="${item.id}"><i class="bi bi-trash"></i></button>
-            </div>
-        `;
+        if (template) {
+            const clone = template.content.cloneNode(true) as any;
+            
+            const nameEl = clone.querySelector('.card-name');
+            if (nameEl) nameEl.textContent = item.name || ('Drawing ' + item.id);
+            
+            const idBadge = clone.querySelector('.card-id-badge');
+            if (idBadge) idBadge.textContent = item.id;
+
+            const deleteBtn = clone.querySelector('.btn-card-delete');
+            if (deleteBtn) deleteBtn.setAttribute('data-id', item.id);
+
+            const previewEl = clone.querySelector('.card-preview');
+            if (previewEl && imgSrc) {
+                const img = newElm('img', { src: imgSrc, alt: 'preview' });
+                previewEl.appendChild(img);
+            }
+            
+            card.appendChild(clone);
+        }
 
         const type = item.type || 'canvas';
-        if (type === 'import_image') {
-            card.style.cursor = 'default';
-        } else {
-            card.onclick = () => openDrawing(item.id);
-        }
-
-        const deleteBtn = getDomOf(card, '.btn-card-delete');
-        if (deleteBtn) {
-            deleteBtn.onclick = (e) => deleteDrawing(item.id, e);
-        }
 
         if (type === 'pattern' && listPattern) {
             listPattern.appendChild(card);
