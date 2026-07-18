@@ -343,6 +343,9 @@ const interactionMap = {
             },
             '#btn-back-gallery': {
                 f: (e) => handleQuitToGallery(e)
+            },
+            '#btn-toggle-settings': {
+                f: () => toggleClassDom('#settings-panel', 'collapsed')
             }
         }
     },

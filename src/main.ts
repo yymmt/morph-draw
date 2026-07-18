@@ -23,8 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
  * Binds DOM elements actions, window resize triggers, pointer movements, and keyboard events onto editor handler pipelines.
  */
 function initEvents() {
-
-
     document.body.onclick = (event) => {
         handleInputUpdate(event);
     };
@@ -94,12 +92,6 @@ function initEvents() {
         await handleInputUpdate(e);
     });
 
-    getDom('#btn-toggle-settings').onclick = () => {
-        const panel = getDom('#settings-panel');
-        if (panel) {
-            panel.classList.toggle('collapsed');
-        }
-    };
 
     getDoms('.settings-tab-btn').forEach(btn => {
         btn.onclick = () => {
