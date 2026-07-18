@@ -92,17 +92,6 @@ function initEvents() {
         await handleInputUpdate(e);
     });
 
-    const drawNameInput = getDom('#input-draw-name');
-    if (drawNameInput) {
-        drawNameInput.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-                const btn = getDom('#btn-save-image-settings');
-                if (btn) btn.click();
-                drawNameInput.blur();
-            }
-        };
-    }
-
 
     const dlSlider = getDom('#slider-deform-dl');
     if (dlSlider) {
