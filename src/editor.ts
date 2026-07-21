@@ -2745,6 +2745,7 @@ function handlePolylineDeform() {
     });
 }
 
+// FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
 (window as any).handleInputUpdate = handleInputUpdate;
 (window as any).handleInputUpdate_old = handleInputUpdate_old;
 (window as any).updateTransformPivotToCenter = updateTransformPivotToCenter;

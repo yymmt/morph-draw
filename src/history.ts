@@ -63,6 +63,7 @@ function redo() {
     renderCanvas();
 }
 
+// FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
 (window as any).pushHistory = pushHistory;
 (window as any).undo = undo;
 (window as any).redo = redo;

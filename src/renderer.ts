@@ -558,6 +558,7 @@ function renderGuides(id, container) {
     container.appendChild(g);
 }
 
+// FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
 (window as any).renderCanvas = renderCanvas;
 (window as any).clearAllCaches = clearAllCaches;
 (window as any).getShapeCache = getShapeCache;

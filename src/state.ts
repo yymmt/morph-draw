@@ -590,6 +590,7 @@ function getModifierState(rawEvent) {
     return 'no_mod';
 }
 
+// FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
 (window as any).state = state;
 (window as any).keyHandlers = keyHandlers;
 (window as any).interactionMap = interactionMap;

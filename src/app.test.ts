@@ -117,6 +117,7 @@ import './renderer';
 import './editor';
 import './main';
 
+// FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
 // Gain access to global functions registered on window
 const {
     state,

@@ -376,6 +376,7 @@ function renderPatternWebGL(positions, textureName) {
     return state.patternWebGLCanvas;
 }
 
+// FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
 (window as any).initWebGLPatternRenderer = initWebGLPatternRenderer;
 (window as any).loadWebGLTexture = loadWebGLTexture;
 (window as any).drawFallbackLeaf = drawFallbackLeaf;

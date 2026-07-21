@@ -609,6 +609,7 @@ function renderLayerList() {
     });
 }
 
+// FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
 (window as any).initDB = initDB;
 (window as any).saveDrawing = saveDrawing;
 (window as any).loadGallery = loadGallery;
