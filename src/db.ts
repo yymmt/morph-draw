@@ -241,26 +241,14 @@ function renderGalleryGrid(items) {
             }
         }
 
-        if (template) {
-            const clone = template.content.cloneNode(true) as any;
-            
-            const nameEl = clone.querySelector('.card-name');
-            if (nameEl) nameEl.textContent = item.name || ('Drawing ' + item.id);
-            
-            const idBadge = clone.querySelector('.card-id-badge');
-            if (idBadge) idBadge.textContent = item.id;
-
-            const deleteBtn = clone.querySelector('.btn-card-delete');
-            if (deleteBtn) deleteBtn.setAttribute('data-id', item.id);
-
-            const previewEl = clone.querySelector('.card-preview');
-            if (previewEl && imgSrc) {
-                const img = newElm('img', { src: imgSrc, alt: 'preview' });
-                previewEl.appendChild(img);
-            }
-            
-            card.appendChild(clone);
+        const clone = template.content.cloneNode(true) as any;
+        getDomOf(clone, '.card-name').textContent = item.name || ('Drawing ' + item.id);
+        getDomOf(clone, '.card-id-badge').textContent = item.id;
+        getDomOf(clone, '.btn-card-delete').setAttribute('data-id', item.id);
+        if (imgSrc) {
+            getDomOf(clone, '.card-preview').appendChild(newElm('img', { src: imgSrc, alt: 'preview' }));
         }
+        card.appendChild(clone);
 
         const type = item.type || 'canvas';
 
@@ -597,35 +585,25 @@ function renderLayerList() {
         });
         item.setAttribute('data-id', layerId);
 
-        if (template) {
-            const clone = template.content.cloneNode(true) as any;
-            
-            const visBtn = clone.querySelector('.layer-visibility-btn');
-            if (visBtn) {
-                const icon = visBtn.querySelector('i');
-                if (icon) {
-                    icon.className = `bi ${layer.visible ? 'bi-eye' : 'bi-eye-slash'}`;
-                }
-            }
+        const clone = template.content.cloneNode(true) as any;
+        
+        getDomOf(clone, '.layer-visibility-btn i').className = `bi ${layer.visible ? 'bi-eye' : 'bi-eye-slash'}`;
 
-            const input = clone.querySelector('.layer-name-input');
-            if (input) {
+        const input = getDomOf(clone, '.layer-name-input');
+        input.value = layer.name;
+        input.onblur = () => {
+            if (input.value.trim() !== '') {
+                layer.name = input.value.trim();
+                pushHistory();
+            } else {
                 input.value = layer.name;
-                input.onblur = () => {
-                    if (input.value.trim() !== '') {
-                        layer.name = input.value.trim();
-                        pushHistory();
-                    } else {
-                        input.value = layer.name;
-                    }
-                };
-                input.onkeydown = (e) => {
-                    if (e.key === 'Enter') input.blur();
-                };
             }
+        };
+        input.onkeydown = (e: any) => {
+            if (e.key === 'Enter') input.blur();
+        };
 
-            item.appendChild(clone);
-        }
+        item.appendChild(clone);
 
         list.appendChild(item);
     });
