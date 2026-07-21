@@ -14,7 +14,6 @@
         rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/ress/dist/ress.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <link rel="stylesheet" href="style.css?v=115">
 </head>
 
 <body>
@@ -167,7 +166,8 @@
                     <!-- Common Settings Tab -->
                     <div class="settings-tab-content" id="tab-common">
                         <div class="settings-group">
-                            <p class="settings-placeholder">共通設定項目（拡張予定）</p>
+                            <label class="settings-label" for="slider-deform-dl">延長距離 (dl): <span id="val-deform-dl" style="color: #2196F3; font-weight: bold;">100</span></label>
+                            <input id="slider-deform-dl" type="range" min="10" max="300" step="5" value="100" style="width: 100%;">
                         </div>
                     </div>
                 </div>
@@ -187,14 +187,10 @@
                 <div id="pattern-guide" class="hidden">
                     <span>【パターン角編集】 t+左右ドラッグ:ターゲット移動（角の自動選択） | Shift+t+左右ドラッグ:選択中の角のパラメータ調整 | Shift+p:終了</span>
                 </div>
-                <div id="search-bar" class="hidden">
-                    <span class="search-prefix">/</span>
-                    <input id="search-input" type="text" placeholder="検索 (レイヤー名/ID/タイプ)...">
+                <div id="deform-guide" class="hidden">
+                    <span>【変形編集】 k+左右ドラッグ: 変形強度調整 (アンカーポラインへ引き寄せ)</span>
                 </div>
-                <div id="command-bar" class="hidden">
-                    <span class="command-prefix">:</span>
-                    <input id="command-input" type="text" placeholder="コマンドを入力... (例: fillpattern sample)">
-                </div>
+
             </main>
 
             <aside id="minimap-panel" class="collapsed">
@@ -206,20 +202,36 @@
                     </div>
                     <div id="layer-list" class="layer-list-container"></div>
                 </div>
-                <button id="btn-toggle-minimap" class="toggle-btn"><i class="bi bi-chevron-double-left"></i></button>
+                <button id="btn-toggle-minimap" class="toggle-btn">
+                    <i class="bi bi-chevron-double-left"></i>
+                    <i class="bi bi-chevron-double-right"></i>
+                </button>
             </aside>
         </div>
     </div>
 
-    <script src="mdmath.js?v=115"></script>
-    <script src="webgl_renderer.js?v=115"></script>
-    <script src="state.js?v=115"></script>
-    <script src="db.js?v=115"></script>
-    <script src="history.js?v=115"></script>
-    <script src="renderer.js?v=115"></script>
-    <script src="editor.js?v=115"></script>
-    <script src="main.js?v=115"></script>
-    <script src="test.js?v=115"></script>
+    <template id="tmpl-gallery-card">
+        <div class="card-preview"></div>
+        <div class="card-info">
+            <div class="card-title-group">
+                <span class="card-name"></span>
+                <span class="card-id-badge"></span>
+            </div>
+            <button class="btn-card-delete"><i class="bi bi-trash"></i></button>
+        </div>
+    </template>
+
+    <template id="tmpl-layer-item">
+        <div class="layer-info">
+            <span class="layer-visibility-btn"><i class="bi"></i></span>
+            <input class="layer-name-input" type="text">
+        </div>
+        <div class="layer-controls">
+            <button class="layer-control-btn btn-layer-delete"><i class="bi bi-trash"></i></button>
+        </div>
+    </template>
+
+    <script type="module" src="/src/main.ts"></script>
 </body>
 
 </html>

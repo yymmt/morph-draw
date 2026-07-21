@@ -11,8 +11,8 @@ const state = {
     view: 'gallery',
     currentDrawId: null,
     drawingType: 'canvas', // 'canvas' | 'pattern' | 'import_image'
-    shapes: {}, // ID -> Shape
-    beziers: {},  // ID -> Bezier
+    shapes: {} as any, // ID -> Shape
+    beziers: {} as any,  // ID -> Bezier
     scene: [],    // Root level IDs
     zoom: 1,
     rotation: 0,
@@ -38,25 +38,24 @@ const state = {
     selectedLayerId: null, // Currently active layer ID
     maxDrawingId: 0, // Cache for maximum drawing ID
     drawingName: '', // Name of the active drawing
-    search: {
-        active: false,
-        results: [],
-        currentIndex: -1
-    },
     patternEdit: {
         active: false,
         selectedCorner: 'TL',
         targetT: 0.0
     },
-    command: {
-        active: false
-    },
     draftStrokes: [],
     currentDraftStroke: null,
+    deformStartPoints: null,
+    deformSettings: {
+        dl: 100
+    },
+    nextIdCounter: 1,
+    patternWebGLCanvas: null,
     input: {
         keys: {},
         pointerOnSVG: { x: 0, y: 0 },
         dragStartOnSVG: null,
+        dragStart: null,
         pointer: { x: 0, y: 0 },
         dPointer: { x: 0, y: 0 },
         deltaY: 0,
@@ -95,8 +94,11 @@ const state = {
         state.drawingType = 'canvas';
         state.draftStrokes = [];
         state.currentDraftStroke = null;
+        state.deformStartPoints = null;
+        state.input.dragStart = null;
+        state.deformSettings = data.deformSettings || { dl: 100 };
     }
-};
+} as any;
 
 /**
  * Key event handlers mapping modifier key state and key codes to action functions.
@@ -158,10 +160,6 @@ const keyHandlers = {
         },
         '?': { keydown: { f: () => toggleHelpModal() } },
         q: { keydown: { f: (ctx) => handleQuitToGallery(ctx) } },
-        '/': { keydown: { f: (ctx) => handleOpenSearch(ctx) } },
-        ':': { keydown: { f: (ctx) => handleOpenCommand(ctx) } },
-        n: { keydown: { f: (ctx) => handleSearchNext(ctx), needsRender: true } },
-        N: { keydown: { f: (ctx) => handleSearchPrev(ctx), needsRender: true } },
         ArrowLeft: { keydown: { f: (ctx) => handleFocusVertexPrev(ctx), needsRender: true } },
         ArrowRight: { keydown: { f: (ctx) => handleFocusVertexNext(ctx), needsRender: true } },
         Escape: { keydown: { f: (ctx) => handleClearVertexFocus(ctx), needsRender: true } },
@@ -240,10 +238,10 @@ const modeHandlers = {
 const interactionMap = {
     view_canvas: {
         pointermove_while_key_press: {
-            m: { f: () => handleMove(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true },
-            r: { f: () => handleRotate(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true },
-            s: { f: () => handleScale(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true },
-            x: {
+            m: { f: () => handleMove(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true }, // shapeの移動
+            r: { f: () => handleRotate(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true }, // shapeの回転
+            s: { f: () => handleScale(), keydown: () => updateTransformPivotToCenter(), needsRender: true, pushHistoryOnKeyUp: true }, // shapeの拡大縮小
+            d: { // 下書きレイヤーへの描画
                 f: () => {
                     const curr = state.input.pointerOnSVG;
                     const d = getMainCanvasSVGVector();
@@ -272,9 +270,35 @@ const interactionMap = {
                 },
                 needsRender: true
             },
+            k: {
+                keydown: () => {
+                    const guide = getDom('#deform-guide');
+                    if (guide) guide.classList.remove('hidden');
+
+                    if (state.anchoredShapeIds.length !== 1) return;
+                    const anchorId = state.anchoredShapeIds[0];
+                    const anchorShape = state.shapes[anchorId];
+                    if (!anchorShape || anchorShape.type !== 'polyline') return;
+
+                    state.deformStartPoints = {};
+                    state.selectedShapeIds.forEach(id => {
+                        const shape = state.shapes[id];
+                        if (shape && shape.type === 'polyline' && shape.points) {
+                            state.deformStartPoints[id] = shape.points.map(p => ({ x: p.x, y: p.y }));
+                        }
+                    });
+                    state.input.dragStart = { x: state.input.pointer.x, y: state.input.pointer.y };
+                },
+                keyup: () => {
+                    const guide = getDom('#deform-guide');
+                    if (guide) guide.classList.add('hidden');
+                },
+                f: () => handlePolylineDeform(),
+                needsRender: true,
+                pushHistoryOnKeyUp: true
+            }
         },
         key_down: {
-            c: {},
             p: {
                 f: (ctx) => handleConvertRasterToPolyline(ctx),
                 needsRender: true,
@@ -285,6 +309,77 @@ const interactionMap = {
         shift_pointerdown: {},
         ctrl_wheel: {
             f: () => handleZoom(), needsRender: true,
+        },
+        drag_no_key: {
+            pointerdown: {
+                needsRender: true
+            },
+            pointermove: {
+                f: (event) => {
+                    updateSelectionByDragRect();
+                },
+                needsRender: true
+            },
+            pointerup: {
+                needsRender: true,
+                pushHistory: true
+            }
+        },
+        click_selector: {
+            '#btn-toggle-minimap': {
+                f: () => toggleClassDom('#minimap-panel', 'collapsed')
+            },
+            '#btn-back-gallery': {
+                f: (e) => handleQuitToGallery(e)
+            },
+            '#btn-toggle-settings': {
+                f: () => toggleClassDom('#settings-panel', 'collapsed')
+            },
+            '.settings-tab-btn': {
+                f: (e) => {
+                    const tabName = e.target.closest('.settings-tab-btn')?.getAttribute('data-tab');
+                    if (tabName) switchSettingsTab(tabName);
+                }
+            },
+            '#btn-save-image-settings': {
+                f: () => saveImageSettings()
+            },
+            '#btn-add-layer': {
+                f: () => addLayer()
+            },
+            '.btn-layer-delete': {
+                f: (e) => {
+                    const id = e.matchedTarget.closest('.layer-item')?.getAttribute('data-id');
+                    if (id) deleteLayer(id);
+                }
+            },
+            '.layer-visibility-btn': {
+                f: (e) => {
+                    const id = e.matchedTarget.closest('.layer-item')?.getAttribute('data-id');
+                    if (id) {
+                        const layer = state.shapes[id];
+                        if (layer) {
+                            layer.visible = !layer.visible;
+                            rasterizeInactiveLayers();
+                            renderCanvas();
+                            pushHistory();
+                        }
+                    }
+                }
+            },
+            '.layer-item': {
+                f: (e) => {
+                    if (e.target.closest('input') || e.target.closest('button') || e.target.closest('.layer-visibility-btn')) return;
+                    const id = e.matchedTarget.getAttribute('data-id');
+                    if (id) {
+                        state.selectedLayerId = id;
+                        state.selectedShapeIds = [];
+                        state.focusedVertex = null;
+                        rasterizeInactiveLayers();
+                        renderCanvas();
+                    }
+                }
+            }
         }
     },
     view_gallery: {
@@ -293,7 +388,10 @@ const interactionMap = {
             ['#btn-new-canvas']: { f: () => startNewDrawing('canvas') },
             ['#btn-new-pattern']: { f: () => startNewDrawing('pattern') },
             ['#btn-new-import']: { f: () => importImageFile() },
-            ['body']: { f: () => addClassDom('#new-draw-menu', 'hidden') },
+            ['.btn-card-delete']: { f: (e) => deleteDrawing(e.matchedTarget.getAttribute('data-id'), e) },
+            ['#gallery-list-canvas .gallery-card, #gallery-list-pattern .gallery-card']: { f: (e) => openDrawing(e.matchedTarget.getAttribute('data-id')) },
+            // body は末尾。
+            ['body']: { f: () => addClassDom('#new-draw-menu', 'hidden') }
         }
     }
 };
@@ -301,35 +399,10 @@ const interactionMap = {
 /** @type {IDBDatabase} */
 let db;
 
-/**
- * Selects all child DOM elements under root element matching a selector.
- * @param {Element} elm - The root element to search within.
- * @param {string} pat - CSS Selector pattern.
- * @returns {Array<Element>}
- */
-const getDomsOf = (elm, pat) => Array.from(elm.querySelectorAll(pat));
-
-/**
- * Selects first child DOM element under root element matching a selector.
- * @param {Element} elm - The root element to search within.
- * @param {string} pat - CSS Selector pattern.
- * @returns {Element|undefined}
- */
-const getDomOf = (elm, pat) => getDomsOf(elm, pat)[0];
-
-/**
- * Selects all DOM elements matching a selector.
- * @param {string} pat - CSS Selector pattern.
- * @returns {Array<Element>}
- */
-const getDoms = (pat) => getDomsOf(document, pat);
-
-/**
- * Selects first DOM element matching a selector.
- * @param {string} pat - CSS Selector pattern.
- * @returns {Element|undefined}
- */
-const getDom = (pat) => getDomsOf(document, pat)[0];
+const getDomsOf = (elm, pat) => Array.from(elm.querySelectorAll(pat)) as any;
+const getDomOf = (elm, pat) => getDomsOf(elm, pat)[0] as any;
+const getDoms = (pat) => getDomsOf(document, pat) as any;
+const getDom = (pat) => getDomsOf(document, pat)[0] as any;
 
 /**
  * Toggles a class on the matched DOM element.
@@ -407,7 +480,10 @@ const getMainCanvasSVGVector = () => getSVGVector(state.input.dPointer, getDom('
  * Checks if current active element is an editable input or textarea.
  * @returns {boolean}
  */
-const isFocusEditable = () => !!(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable));
+const isFocusEditable = () => {
+    const el = document.activeElement as any;
+    return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable));
+};
 
 /**
  * Scans existing IDs to initialize the ID incrementer counter.
@@ -501,3 +577,39 @@ function getModifierState(rawEvent) {
     if (shift) return 'shift';
     return 'no_mod';
 }
+
+// FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
+(window as any).state = state;
+(window as any).keyHandlers = keyHandlers;
+(window as any).interactionMap = interactionMap;
+(window as any).modeHandlers = modeHandlers;
+(window as any).getDomsOf = getDomsOf;
+(window as any).getDomOf = getDomOf;
+(window as any).getDoms = getDoms;
+(window as any).getDom = getDom;
+(window as any).toggleClassDom = toggleClassDom;
+(window as any).addClassDom = addClassDom;
+(window as any).removeClassDom = removeClassDom;
+(window as any).newElm = newElm;
+(window as any).filterAttribute = filterAttribute;
+(window as any).getSVGPoint = getSVGPoint;
+(window as any).getMainCanvasSVGPoint = getMainCanvasSVGPoint;
+(window as any).getSVGVector = getSVGVector;
+(window as any).getMainCanvasSVGVector = getMainCanvasSVGVector;
+(window as any).isFocusEditable = isFocusEditable;
+(window as any).initializeIdCounter = initializeIdCounter;
+(window as any).generateId = generateId;
+(window as any).stateReplacer = stateReplacer;
+(window as any).initOffscreenCanvases = initOffscreenCanvases;
+(window as any).resizeOffscreenCanvases = resizeOffscreenCanvases;
+(window as any).getModifierState = getModifierState;
+
+Object.defineProperty(window, 'db', {
+    get() { return db; },
+    set(v) { db = v; },
+    configurable: true
+});
+
+export { };
+
+

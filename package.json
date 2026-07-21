@@ -1,0 +1,31 @@
+{
+  "name": "morph-draw",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yymmt/morph-draw.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/yymmt/morph-draw/issues"
+  },
+  "homepage": "https://github.com/yymmt/morph-draw#readme",
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "jsdom": "^29.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  }
+}

@@ -18,10 +18,6 @@ function loadDrawingTexture(id) {
             resolve(state.webglTextures[id]);
             return;
         }
-        if (id === 'sample' || id === 'brush_sample') {
-            resolve(state.webglTextures ? state.webglTextures[id] : null);
-            return;
-        }
         if (!db) {
             resolve(null);
             return;
@@ -105,13 +101,13 @@ function loadDrawingTexture(id) {
 function initDB() {
     const request = indexedDB.open('morph-draw-db', 1);
     request.onupgradeneeded = (e) => {
-        const dbInstance = e.target.result;
+        const dbInstance = (e.target as any).result;
         if (!dbInstance.objectStoreNames.contains('drawings')) {
             dbInstance.createObjectStore('drawings', { keyPath: 'id' });
         }
     };
     request.onsuccess = (e) => { 
-        db = e.target.result; 
+        db = (e.target as any).result; 
         loadGallery(); 
     };
 }
@@ -225,8 +221,11 @@ function renderGalleryGrid(items) {
     if (listPattern) listPattern.innerHTML = '';
     if (listImport) listImport.innerHTML = '';
 
+    const template = getDom('#tmpl-gallery-card') as any;
+
     items.sort((a, b) => b.updatedAt - a.updatedAt).forEach(item => {
         const card = newElm('div', { className: 'gallery-card' });
+        card.setAttribute('data-id', item.id);
 
         let imgSrc = '';
         if (item.preview) {
@@ -238,30 +237,16 @@ function renderGalleryGrid(items) {
             }
         }
 
-        card.innerHTML = `
-            <div class="card-preview">
-                ${imgSrc ? `<img src="${imgSrc}" alt="preview">` : ''}
-            </div>
-            <div class="card-info">
-                <div class="card-title-group">
-                    <span class="card-name">${item.name || ('Drawing ' + item.id)}</span>
-                    <span class="card-id-badge">${item.id}</span>
-                </div>
-                <button class="btn-card-delete" data-id="${item.id}"><i class="bi bi-trash"></i></button>
-            </div>
-        `;
+        const clone = template.content.cloneNode(true) as any;
+        getDomOf(clone, '.card-name').textContent = item.name || ('Drawing ' + item.id);
+        getDomOf(clone, '.card-id-badge').textContent = item.id;
+        getDomOf(clone, '.btn-card-delete').setAttribute('data-id', item.id);
+        if (imgSrc) {
+            getDomOf(clone, '.card-preview').appendChild(newElm('img', { src: imgSrc, alt: 'preview' }));
+        }
+        card.appendChild(clone);
 
         const type = item.type || 'canvas';
-        if (type === 'import_image') {
-            card.style.cursor = 'default';
-        } else {
-            card.onclick = () => openDrawing(item.id);
-        }
-
-        const deleteBtn = getDomOf(card, '.btn-card-delete');
-        if (deleteBtn) {
-            deleteBtn.onclick = (e) => deleteDrawing(item.id, e);
-        }
 
         if (type === 'pattern' && listPattern) {
             listPattern.appendChild(card);
@@ -319,6 +304,7 @@ function openDrawing(id) {
             state.canvas.width = 800;
             state.canvas.height = 600;
         }
+        state.deformSettings = data.deformSettings || { dl: 100 };
         const widthInput = getDom('#input-canvas-width');
         const heightInput = getDom('#input-canvas-height');
         if (widthInput && heightInput) {
@@ -326,17 +312,19 @@ function openDrawing(id) {
             heightInput.value = state.canvas.height;
         }
         resizeOffscreenCanvases();
+        syncDeformSlidersFromState();
 
         migrateDrawingData(state.shapes);
         initializeIdCounter();
 
         state.selectedLayerId = state.scene[0];
 
-        const textureIdsToLoad = new Set();
+        const textureIdsToLoad = new Set() as any;
         Object.values(state.shapes).forEach(shape => {
-            if (shape && shape.style) {
-                if (shape.style.fillPattern) textureIdsToLoad.add(shape.style.fillPattern);
-                if (shape.style.strokePattern) textureIdsToLoad.add(shape.style.strokePattern);
+            const s = shape as any;
+            if (s && s.style) {
+                if (s.style.fillPattern) textureIdsToLoad.add(s.style.fillPattern);
+                if (s.style.strokePattern) textureIdsToLoad.add(s.style.strokePattern);
             }
         });
 
@@ -358,15 +346,16 @@ function openDrawing(id) {
  */
 function migrateDrawingData(shapes) {
     Object.values(shapes).forEach(shape => {
-        if (shape && shape.type === 'bezier-group') {
-            if (shape.style) {
-                if (shape.style.outline === undefined) shape.style.outline = true;
-                if (shape.style.fillEnabled === undefined) shape.style.fillEnabled = true;
+        const s = shape as any;
+        if (s && s.type === 'bezier-group') {
+            if (s.style) {
+                if (s.style.outline === undefined) s.style.outline = true;
+                if (s.style.fillEnabled === undefined) s.style.fillEnabled = true;
             } else {
-                shape.style = { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true };
+                s.style = { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true };
             }
-            if (!shape.strokeWidthData) {
-                shape.strokeWidthData = [{ t: 0, w: 10 }, { t: 1, w: 10 }];
+            if (!s.strokeWidthData) {
+                s.strokeWidthData = [{ t: 0, w: 10 }, { t: 1, w: 10 }];
             }
         }
     });
@@ -399,7 +388,7 @@ function resizeImageToBlob(file, maxWidth, maxHeight) {
                 }, 'image/png');
             };
             img.onerror = () => resolve(null);
-            img.src = event.target.result;
+            img.src = (event.target as any).result;
         };
         reader.onerror = () => resolve(null);
         reader.readAsDataURL(file);
@@ -428,7 +417,7 @@ function importImageFile() {
             i.onload = () => resolve(i);
             i.onerror = () => resolve(null);
             i.src = URL.createObjectURL(file);
-        });
+        }) as any;
 
         const width = img ? img.width : 800;
         const height = img ? img.height : 600;
@@ -486,6 +475,7 @@ function startNewDrawing(type = 'canvas') {
 
     state.canvas.width = 800;
     state.canvas.height = 600;
+    state.deformSettings = { dl: 100 };
     const widthInput = getDom('#input-canvas-width');
     const heightInput = getDom('#input-canvas-height');
     if (widthInput && heightInput) {
@@ -493,6 +483,7 @@ function startNewDrawing(type = 'canvas') {
         heightInput.value = 600;
     }
     resizeOffscreenCanvases();
+    syncDeformSlidersFromState();
 
     const layerId = generateId('l');
     state.shapes[layerId] = {
@@ -579,6 +570,8 @@ function renderLayerList() {
     if (!list) return;
     list.innerHTML = '';
 
+    const template = getDom('#tmpl-layer-item') as any;
+
     [...state.scene].reverse().forEach(layerId => {
         const layer = state.shapes[layerId];
         if (!layer || layer.type !== 'layer') return;
@@ -586,35 +579,14 @@ function renderLayerList() {
         const item = newElm('div', {
             className: `layer-item${state.selectedLayerId === layerId ? ' active' : ''}${layer.visible ? '' : ' hidden-layer'}`
         });
+        item.setAttribute('data-id', layerId);
 
-        item.innerHTML = `
-            <div class="layer-info">
-                <span class="layer-visibility-btn"><i class="bi ${layer.visible ? 'bi-eye' : 'bi-eye-slash'}"></i></span>
-                <input class="layer-name-input" type="text" value="${layer.name}">
-            </div>
-            <div class="layer-controls">
-                <button class="layer-control-btn btn-layer-delete"><i class="bi bi-trash"></i></button>
-            </div>
-        `;
+        const clone = template.content.cloneNode(true) as any;
+        
+        getDomOf(clone, '.layer-visibility-btn i').className = `bi ${layer.visible ? 'bi-eye' : 'bi-eye-slash'}`;
 
-        item.onclick = (e) => {
-            if (e.target.closest('input') || e.target.closest('button') || e.target.closest('.layer-visibility-btn')) return;
-            state.selectedLayerId = layerId;
-            state.selectedShapeIds = [];
-            state.focusedVertex = null;
-            rasterizeInactiveLayers();
-            renderCanvas();
-        };
-
-        getDomOf(item, '.layer-visibility-btn').onclick = (e) => {
-            e.stopPropagation();
-            layer.visible = !layer.visible;
-            rasterizeInactiveLayers();
-            renderCanvas();
-            pushHistory();
-        };
-
-        const input = getDomOf(item, '.layer-name-input');
+        const input = getDomOf(clone, '.layer-name-input');
+        input.value = layer.name;
         input.onblur = () => {
             if (input.value.trim() !== '') {
                 layer.name = input.value.trim();
@@ -623,15 +595,29 @@ function renderLayerList() {
                 input.value = layer.name;
             }
         };
-        input.onkeydown = (e) => {
+        input.onkeydown = (e: any) => {
             if (e.key === 'Enter') input.blur();
         };
 
-        getDomOf(item, '.btn-layer-delete').onclick = (e) => {
-            e.stopPropagation();
-            deleteLayer(layerId);
-        };
+        item.appendChild(clone);
 
         list.appendChild(item);
     });
 }
+
+// FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
+(window as any).initDB = initDB;
+(window as any).saveDrawing = saveDrawing;
+(window as any).loadGallery = loadGallery;
+(window as any).deleteDrawing = deleteDrawing;
+(window as any).openDrawing = openDrawing;
+(window as any).startNewDrawing = startNewDrawing;
+(window as any).importImageFile = importImageFile;
+(window as any).addLayer = addLayer;
+(window as any).deleteLayer = deleteLayer;
+(window as any).renderLayerList = renderLayerList;
+(window as any).switchView = switchView;
+
+export {};
+
+

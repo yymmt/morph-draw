@@ -52,7 +52,7 @@ function getShapeRenderBounds(shapeId) {
         shape.bezierIds.forEach(bid => {
             const bez = state.beziers[bid];
             if (bez && bez.samplePointByT) {
-                Object.values(bez.samplePointByT).forEach(p => {
+                Object.values(bez.samplePointByT).forEach((p: any) => {
                     if (p.x < minX) minX = p.x;
                     if (p.x > maxX) maxX = p.x;
                     if (p.y < minY) minY = p.y;
@@ -118,13 +118,13 @@ function renderCanvas() {
     }
 
     const borderRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    borderRect.setAttribute('x', 0);
-    borderRect.setAttribute('y', 0);
-    borderRect.setAttribute('width', state.canvas.width);
-    borderRect.setAttribute('height', state.canvas.height);
+    borderRect.setAttribute('x', '0');
+    borderRect.setAttribute('y', '0');
+    borderRect.setAttribute('width', String(state.canvas.width));
+    borderRect.setAttribute('height', String(state.canvas.height));
     borderRect.setAttribute('fill', 'none');
     borderRect.setAttribute('stroke', '#ccc');
-    borderRect.setAttribute('stroke-width', 1);
+    borderRect.setAttribute('stroke-width', '1');
     borderRect.setAttribute('stroke-dasharray', '4,4');
     viewport.appendChild(borderRect);
 
@@ -137,6 +137,27 @@ function renderCanvas() {
             });
         }
     }
+
+    const hasNoActiveKeys = !Object.keys(state.input.keys).some(k => state.input.keys[k]);
+    if (state.input.isPointerDown && hasNoActiveKeys && state.input.dragStartOnSVG && state.input.pointerOnSVG) {
+        const start = state.input.dragStartOnSVG;
+        const current = state.input.pointerOnSVG;
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        const x = Math.min(start.x, current.x);
+        const y = Math.min(start.y, current.y);
+        const w = Math.abs(start.x - current.x);
+        const h = Math.abs(start.y - current.y);
+        rect.setAttribute('x', String(x));
+        rect.setAttribute('y', String(y));
+        rect.setAttribute('width', String(w));
+        rect.setAttribute('height', String(h));
+        rect.setAttribute('fill', 'rgba(59, 130, 246, 0.15)');
+        rect.setAttribute('stroke', '#3b82f6');
+        rect.setAttribute('stroke-width', '1.5');
+        rect.setAttribute('stroke-dasharray', '3,3');
+        viewport.appendChild(rect);
+    }
+
 
     if (activeLayerId && state.canvas.activeOffscreen) {
         const activeCtx = state.canvas.activeOffscreen.getContext('2d');
@@ -413,10 +434,10 @@ function renderGuides(id, container) {
 
     const addLine = (x1, y1, x2, y2, strokeColor, strokeWidth, isDashed = false) => {
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', x1); line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+        line.setAttribute('x1', String(x1)); line.setAttribute('y1', String(y1));
+        line.setAttribute('x2', String(x2)); line.setAttribute('y2', String(y2));
         line.setAttribute('stroke', strokeColor);
-        line.setAttribute('stroke-width', strokeWidth);
+        line.setAttribute('stroke-width', String(strokeWidth));
         if (isDashed) {
             line.setAttribute('stroke-dasharray', '2,2');
         }
@@ -425,18 +446,25 @@ function renderGuides(id, container) {
 
     const addCircle = (cx, cy, r, fillColor, strokeColor, strokeWidth = 1.5) => {
         const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
+        c.setAttribute('cx', String(cx)); c.setAttribute('cy', String(cy)); c.setAttribute('r', String(r));
         c.setAttribute('fill', fillColor);
         c.setAttribute('stroke', strokeColor);
-        c.setAttribute('stroke-width', strokeWidth);
+        c.setAttribute('stroke-width', String(strokeWidth));
         g.appendChild(c);
     };
 
-    if (shape.bezierIds) {
+    if (shape.bezierIds || shape.type === 'polyline') {
         const guidePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        const v = i => state.beziers[shape.bezierIds[i]].controlPoints.map(cp => cp.v);
-        const ps = (vArr, j) => `${vArr[j].x},${vArr[j].y}`;
-        const d = `M ${ps(v(0), 0)} ` + shape.bezierIds.map((bid, i) => `C ${ps(v(i), 1)} ${ps(v(i), 2)} ${ps(v(i), 3)}`).join(' ') + ' Z';
+        let d = '';
+        if (shape.type === 'polyline') {
+            if (shape.points && shape.points.length > 0) {
+                d = 'M ' + shape.points.map(p => `${p.x},${p.y}`).join(' L') + (shape.isClosed ? ' Z' : '');
+            }
+        } else if (shape.bezierIds) {
+            const v = i => state.beziers[shape.bezierIds[i]].controlPoints.map(cp => cp.v);
+            const ps = (vArr, j) => `${vArr[j].x},${vArr[j].y}`;
+            d = `M ${ps(v(0), 0)} ` + shape.bezierIds.map((bid, i) => `C ${ps(v(i), 1)} ${ps(v(i), 2)} ${ps(v(i), 3)}`).join(' ') + ' Z';
+        }
 
         guidePath.setAttribute('d', d);
         guidePath.setAttribute('fill', 'none');
@@ -453,7 +481,7 @@ function renderGuides(id, container) {
             strokeWidth = 1.5;
         }
         guidePath.setAttribute('stroke', strokeColor);
-        guidePath.setAttribute('stroke-width', strokeWidth);
+        guidePath.setAttribute('stroke-width', String(strokeWidth));
         g.appendChild(guidePath);
 
         if (state.focusedVertex && state.focusedVertex.shapeId === shape.id) {
@@ -508,8 +536,8 @@ function renderGuides(id, container) {
                     addCircle(p.x, p.y, isSelected ? 7 : 5, isSelected ? '#2196F3' : 'white', '#2196F3', 2);
 
                     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    text.setAttribute('x', p.x + 8);
-                    text.setAttribute('y', p.y + 4);
+                    text.setAttribute('x', String(p.x + 8));
+                    text.setAttribute('y', String(p.y + 4));
                     text.setAttribute('fill', '#2196F3');
                     text.setAttribute('font-size', '10px');
                     text.setAttribute('font-weight', 'bold');
@@ -518,12 +546,28 @@ function renderGuides(id, container) {
                 });
             }
 
-            const targetT = state.patternEdit.targetT;
-            const p = getShapePoint(shape, targetT);
+            if (state.patternEdit.active && state.selectedShapeIds.includes(shape.id)) {
+                const targetT = state.patternEdit.targetT;
+                const p = getShapePoint(shape, targetT);
 
-            addCircle(p.x, p.y, 6, 'none', '#f44336', 1.5);
-            addCircle(p.x, p.y, 3, '#f44336', '#f44336', 0);
+                addCircle(p.x, p.y, 6, 'none', '#f44336', 1.5);
+                addCircle(p.x, p.y, 3, '#f44336', '#f44336', 0);
+            }
         }
     }
     container.appendChild(g);
 }
+
+// FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
+(window as any).renderCanvas = renderCanvas;
+(window as any).clearAllCaches = clearAllCaches;
+(window as any).getShapeCache = getShapeCache;
+(window as any).getShapeRenderBounds = getShapeRenderBounds;
+(window as any).markShapeDirty = markShapeDirty;
+(window as any).drawShapeToCanvasContext = drawShapeToCanvasContext;
+(window as any).rasterizeInactiveLayers = rasterizeInactiveLayers;
+(window as any).renderMinimap = renderMinimap;
+(window as any).renderGuides = renderGuides;
+
+export {};
+

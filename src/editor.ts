@@ -43,8 +43,8 @@ function handleCopy(ctx) {
     const shapeIds = Array.from(new Set([...state.selectedShapeIds, ...(state.anchoredShapeIds || [])]));
     if (shapeIds.length === 0) return;
 
-    const candidateShapeIds = new Set();
-    const candidateBezierIds = new Set();
+    const candidateShapeIds = new Set() as any;
+    const candidateBezierIds = new Set() as any;
 
     shapeIds.forEach(sid => {
         const shape = state.shapes[sid];
@@ -56,7 +56,7 @@ function handleCopy(ctx) {
         }
     });
 
-    const invalidBezierIds = new Set();
+    const invalidBezierIds = new Set() as any;
     candidateBezierIds.forEach(bid => {
         const bez = state.beziers[bid];
         if (bez && bez.generator && bez.generator.type === 'connector') {
@@ -68,7 +68,7 @@ function handleCopy(ctx) {
     });
 
     const validShapeIds = [];
-    const validBezierIds = new Set();
+    const validBezierIds = new Set() as any;
 
     candidateShapeIds.forEach(sid => {
         const shape = state.shapes[sid];
@@ -197,36 +197,7 @@ async function handleQuitToGallery(ctx) {
     }
 }
 
-/**
- * Opens search input panel UI.
- * @param {Object} ctx - Event context.
- */
-function handleOpenSearch(ctx) {
-    if (ctx.rawEvent) ctx.rawEvent.preventDefault();
-    openSearchMode();
-}
 
-/**
- * Focuses on next search query result.
- * @param {Object} ctx - Event context.
- */
-function handleSearchNext(ctx) {
-    if (state.search.results.length > 0) {
-        state.search.currentIndex = (state.search.currentIndex + 1) % state.search.results.length;
-        applySearchResult();
-    }
-}
-
-/**
- * Focuses on previous search query result.
- * @param {Object} ctx - Event context.
- */
-function handleSearchPrev(ctx) {
-    if (state.search.results.length > 0) {
-        state.search.currentIndex = (state.search.currentIndex - 1 + state.search.results.length) % state.search.results.length;
-        applySearchResult();
-    }
-}
 
 /**
  * Cycles to previous focused vertex.
@@ -287,14 +258,8 @@ function handleToggleAnchor(ctx) {
         state.insertVertexPending = { ...state.focusedVertex };
         return { pushHistory: false, needsRender: false };
     }
-    state.selectedShapeIds.forEach(id => {
-        const idx = state.anchoredShapeIds.indexOf(id);
-        if (idx >= 0) {
-            state.anchoredShapeIds.splice(idx, 1);
-        } else {
-            state.anchoredShapeIds.push(id);
-        }
-    });
+    state.anchoredShapeIds = [...state.selectedShapeIds];
+    state.selectedShapeIds = [];
     return { pushHistory: true, needsRender: true };
 }
 
@@ -888,6 +853,7 @@ async function handleInputUpdate(event) {
             const matchedEl = event.target.closest(selector);
             if (matchedEl) {
                 interaction = clickMap[selector];
+                (event as any).matchedTarget = matchedEl;
                 event.preventDefault();
                 event.stopPropagation();
                 break;
@@ -902,6 +868,17 @@ async function handleInputUpdate(event) {
                 interaction = movePressMap[key];
                 break;
             }
+        }
+    }
+
+    const hasNoActiveKeys = !Object.keys(state.input.keys).some(k => state.input.keys[k]);
+    if (hasNoActiveKeys) {
+        if (event.type === 'pointerdown') {
+            interaction = interactionMap[viewKey]?.drag_no_key?.pointerdown;
+        } else if (event.type === 'pointermove' && state.input.isPointerDown) {
+            interaction = interactionMap[viewKey]?.drag_no_key?.pointermove;
+        } else if (event.type === 'pointerup') {
+            interaction = interactionMap[viewKey]?.drag_no_key?.pointerup;
         }
     }
 
@@ -935,7 +912,7 @@ async function handleInputUpdate(event) {
     }
 
     if (interaction && typeof interaction.f === 'function') {
-        await interaction.f();
+        await interaction.f(event);
     }
     if (interaction?.pushHistory) {
         pushHistory();
@@ -995,12 +972,50 @@ function switchSettingsTab(tabName) {
 }
 
 /**
+ * Saves the current drawing image configurations (name, dimensions) from UI inputs.
+ */
+function saveImageSettings() {
+    const nameInput = getDom('#input-draw-name');
+    const widthInput = getDom('#input-canvas-width');
+    const heightInput = getDom('#input-canvas-height');
+
+    let changed = false;
+
+    if (nameInput && nameInput.value.trim() !== '') {
+        const newName = nameInput.value.trim();
+        if (newName !== state.drawingName) {
+            state.drawingName = newName;
+            changed = true;
+        }
+    }
+
+    if (widthInput && heightInput) {
+        const w = parseInt(widthInput.value, 10);
+        const h = parseInt(heightInput.value, 10);
+        if (w > 0 && h > 0 && (w !== state.canvas.width || h !== state.canvas.height)) {
+            state.canvas.width = w;
+            state.canvas.height = h;
+            resizeOffscreenCanvases();
+            clearAllCaches();
+            rasterizeInactiveLayers();
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        saveDrawing();
+        pushHistory();
+        renderCanvas();
+    }
+}
+
+/**
  * Locates closest sample point on visible canvas geometries to a click position.
  * @param {Object} pt - The target mouse/click coordinate {x, y}.
  * @returns {Object|null} Nearest vertex record details or null.
  */
 function findClosestSamplePoint(pt) {
-    const visibleShapeIds = new Set();
+    const visibleShapeIds = new Set() as any;
     state.scene.forEach(layerId => {
         const layer = state.shapes[layerId];
         if (layer && layer.type === 'layer' && layer.visible !== false) {
@@ -1009,14 +1024,16 @@ function findClosestSamplePoint(pt) {
     });
 
     let closest = null, minD = 25;
-    for (const [sid, shape] of Object.entries(state.shapes)) {
+    for (const [sid, shapeObj] of Object.entries(state.shapes)) {
+        const shape = shapeObj as any;
         if (!shape.bezierIds) continue;
         if (!visibleShapeIds.has(sid)) continue;
 
-        shape.bezierIds.forEach(bid => {
+        shape.bezierIds.forEach((bid: any) => {
             const b = state.beziers[bid];
             if (!b) return;
-            Object.entries(b.samplePointByT).forEach(([tStr, p]) => {
+            Object.entries(b.samplePointByT).forEach(([tStr, pVal]) => {
+                const p = pVal as any;
                 const d = Math.hypot(p.x - pt.x, p.y - pt.y);
                 if (d < minD) { minD = d; closest = { shapeId: sid, bezierId: bid, t: parseFloat(tStr), pt: p }; }
             });
@@ -1245,13 +1262,13 @@ function updateBezier(id) {
     sample(0, 1);
 
     const pts = Object.values(bez.samplePointByT);
-    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    const xs = pts.map((p: any) => p.x), ys = pts.map((p: any) => p.y);
     bez.boundingBox = {
         x: Math.min(...xs), y: Math.min(...ys),
         w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys)
     };
 
-    Object.values(state.shapes).forEach(shape => {
+    Object.values(state.shapes).forEach((shape: any) => {
         if (shape.bezierIds && shape.bezierIds.includes(id)) {
             markShapeDirty(shape.id);
         }
@@ -1262,7 +1279,7 @@ function updateBezier(id) {
  * Loops and resolves dependent connector beziers ordering, matching endpoints coordinates.
  */
 function resolveBezierDependencies() {
-    Object.values(state.shapes).forEach(shape => {
+    Object.values(state.shapes).forEach((shape: any) => {
         if (shape && shape.name && shape.name.startsWith('wrap') && shape.bezierIds && shape.bezierIds.length > 0) {
             const N = shape.bezierIds.length;
             for (let i = 0; i < N; i++) {
@@ -1285,7 +1302,7 @@ function resolveBezierDependencies() {
         }
     });
 
-    const visited = new Set(), visiting = new Set(), sorted = [];
+    const visited = new Set() as any, visiting = new Set() as any, sorted = [] as any;
     const visit = (id) => {
         if (visited.has(id)) return;
         if (visiting.has(id)) return;
@@ -1389,7 +1406,7 @@ function addShapeAt(type, x, y) {
             bIds.push(bId);
         }
     }
-    const count = Object.values(state.shapes).filter(s => s.name && s.name.startsWith(type)).length + 1;
+    const count = Object.values(state.shapes).filter((s: any) => s.name && s.name.startsWith(type)).length + 1;
     const shape = {
         id, type: 'bezier-group', name: `${type} ${count}`, bezierIds: bIds, props: { x, y, r: type === 'circle' ? r : undefined, a: type === 'circle' ? 0 : undefined },
         style: { fill: '#2196F3', opacity: 0.7, outline: true, fillEnabled: true },
@@ -1416,12 +1433,12 @@ function addShapeAt(type, x, y) {
  * Automatically creates wrap boundary shapes connecting multiple anchored or selected items.
  */
 function createWrap() {
-    const targets = Array.from(new Set([...state.anchoredShapeIds, ...state.selectedShapeIds]));
+    const targets = Array.from(new Set([...state.anchoredShapeIds, ...state.selectedShapeIds]) as any);
     if (targets.length < 2) {
         return;
     }
     const [id1, id2] = targets;
-    const shape1 = state.shapes[id1], shape2 = state.shapes[id2];
+    const shape1 = state.shapes[id1 as any] as any, shape2 = state.shapes[id2 as any] as any;
     if (!shape1 || !shape2) return;
 
     const src1_up_bezier = shape1.bezierIds[0];
@@ -1492,7 +1509,7 @@ function createWrap() {
     };
     bIds.push(bId4);
 
-    const wrapCount = Object.values(state.shapes).filter(s => s.name && s.name.startsWith('wrap')).length + 1;
+    const wrapCount = Object.values(state.shapes).filter((s: any) => s.name && s.name.startsWith('wrap')).length + 1;
     const wrapShape = {
         id: wrapId,
         type: 'bezier-group',
@@ -1660,248 +1677,7 @@ function handleTMovePattern(ctx) {
 /**
  * Triggers command mode interface panel.
  */
-function openCommandMode() {
-    state.command.active = true;
-    const bar = getDom('#command-bar');
-    if (!bar) return;
-    bar.classList.remove('hidden');
-    const input = getDom('#command-input');
-    input.value = '';
-    input.focus();
-}
 
-/**
- * Confirms or aborts active command configurations.
- * @param {boolean} [confirm=true] - Action validation flag.
- */
-function closeCommandMode(confirm = true) {
-    state.command.active = false;
-    const bar = getDom('#command-bar');
-    if (bar) bar.classList.add('hidden');
-
-    const input = getDom('#command-input');
-    if (input) {
-        if (confirm) {
-            executeCommand(input.value);
-        }
-        input.blur();
-    }
-}
-
-/**
- * Keyboard trigger handler opening command input mode.
- * @param {Object} ctx - Event context.
- * @returns {Object} Action state results.
- */
-function handleOpenCommand(ctx) {
-    if (isFocusEditable()) return { needsRender: false };
-    if (ctx.rawEvent) ctx.rawEvent.preventDefault();
-    openCommandMode();
-    return { needsRender: false };
-}
-
-/**
- * Processes terminal command parameters (e.g. fillpattern or strokepattern).
- * @param {string} cmdStr - Command query details.
- */
-function executeCommand(cmdStr) {
-    const parts = cmdStr.trim().split(/\s+/);
-    if (parts.length === 0) return;
-    const command = parts[0];
-    if (command === 'fillpattern') {
-        const patternName = parts[1];
-        if (!patternName || patternName === 'none' || patternName === 'clear') {
-            if (state.selectedShapeIds.length > 0) {
-                state.selectedShapeIds.forEach(shapeId => {
-                    const shape = state.shapes[shapeId];
-                    if (shape) {
-                        if (shape.style) {
-                            delete shape.style.fillPattern;
-                            markShapeDirty(shapeId);
-                        }
-                    }
-                });
-                rasterizeInactiveLayers();
-                renderCanvas();
-                pushHistory();
-            }
-        } else {
-            loadDrawingTexture(patternName).then(texture => {
-                if (!texture) {
-                    console.warn(`Could not load pattern texture for ID "${patternName}"`);
-                    return;
-                }
-                if (state.selectedShapeIds.length > 0) {
-                    state.selectedShapeIds.forEach(shapeId => {
-                        const shape = state.shapes[shapeId];
-                        if (shape && shape.bezierIds) {
-                            if (!shape.style) shape.style = {};
-                            shape.style.fillPattern = patternName;
-                            initPatternCorners(shape);
-                            markShapeDirty(shapeId);
-                        }
-                    });
-                    rasterizeInactiveLayers();
-                    renderCanvas();
-                    pushHistory();
-                }
-            });
-        }
-    } else if (command === 'strokepattern') {
-        const patternName = parts[1];
-        if (!patternName || patternName === 'none' || patternName === 'clear') {
-            if (state.selectedShapeIds.length > 0) {
-                state.selectedShapeIds.forEach(shapeId => {
-                    const shape = state.shapes[shapeId];
-                    if (shape) {
-                        if (shape.style) {
-                            delete shape.style.strokePattern;
-                            markShapeDirty(shapeId);
-                        }
-                    }
-                });
-                rasterizeInactiveLayers();
-                renderCanvas();
-                pushHistory();
-            }
-        } else {
-            loadDrawingTexture(patternName).then(texture => {
-                if (!texture) {
-                    console.warn(`Could not load stroke pattern texture for ID "${patternName}"`);
-                    return;
-                }
-                if (state.selectedShapeIds.length > 0) {
-                    state.selectedShapeIds.forEach(shapeId => {
-                        const shape = state.shapes[shapeId];
-                        if (shape && shape.bezierIds) {
-                            if (!shape.style) shape.style = {};
-                            shape.style.strokePattern = patternName;
-                            markShapeDirty(shapeId);
-                        }
-                    });
-                    rasterizeInactiveLayers();
-                    renderCanvas();
-                    pushHistory();
-                }
-            });
-        }
-    }
-}
-
-/**
- * Triggers search entry bar.
- */
-function openSearchMode() {
-    state.search.active = true;
-    const bar = getDom('#search-bar');
-    if (!bar) return;
-    bar.classList.remove('hidden');
-    const input = getDom('#search-input');
-    input.value = '';
-    input.focus();
-    state.search.results = [];
-    state.search.currentIndex = -1;
-}
-
-/**
- * Closes search input mode.
- * @param {boolean} [confirm=true] - Action validation flag.
- */
-function closeSearchMode(confirm = true) {
-    state.search.active = false;
-    const bar = getDom('#search-bar');
-    if (bar) bar.classList.add('hidden');
-
-    const input = getDom('#search-input');
-    if (input) input.blur();
-}
-
-/**
- * Filters database shapes and layers matching search parameters.
- * @param {string} query - Target search pattern.
- */
-function performSearch(query) {
-    const q = query.toLowerCase().trim();
-    if (!q) {
-        state.search.results = [];
-        state.search.currentIndex = -1;
-        return;
-    }
-
-    const results = [];
-
-    state.scene.forEach(layerId => {
-        const layer = state.shapes[layerId];
-        if (!layer || layer.type !== 'layer') return;
-
-        if (layer.name.toLowerCase().includes(q)) {
-            results.push({
-                type: 'layer',
-                id: layerId,
-                name: layer.name,
-                dispName: `レイヤー: ${layer.name}`
-            });
-        }
-
-        layer.childIds.forEach(shapeId => {
-            const shape = state.shapes[shapeId];
-            if (!shape) return;
-
-            let matches = false;
-            let shapeName = shape.name || shape.type;
-
-            if (shape.id.toLowerCase().includes(q) ||
-                shape.type.toLowerCase().includes(q) ||
-                (shape.name && shape.name.toLowerCase().includes(q))) {
-                matches = true;
-            }
-
-            if (shape.bezierIds) {
-                const generators = shape.bezierIds.map(bid => state.beziers[bid]?.generator?.type).filter(Boolean);
-                if (generators.some(gen => gen.toLowerCase().includes(q))) {
-                    matches = true;
-                }
-            }
-
-            if (matches) {
-                results.push({
-                    type: 'shape',
-                    id: shapeId,
-                    layerId: layerId,
-                    name: shapeName,
-                    dispName: `図形 (${shapeName}): ${shapeId.substring(0, 8)}`
-                });
-            }
-        });
-    });
-
-    state.search.results = results;
-    if (results.length > 0) {
-        state.search.currentIndex = 0;
-    } else {
-        state.search.currentIndex = -1;
-    }
-}
-
-/**
- * Focuses active selections onto highlighted search match.
- */
-function applySearchResult() {
-    const results = state.search.results;
-    const index = state.search.currentIndex;
-    if (index < 0 || index >= results.length) return;
-
-    state.focusedVertex = null;
-    const current = results[index];
-    if (current.type === 'layer') {
-        state.selectedLayerId = current.id;
-        state.selectedShapeIds = [];
-    } else if (current.type === 'shape') {
-        state.selectedLayerId = current.layerId;
-        state.selectedShapeIds = [current.id];
-    }
-    renderCanvas();
-}
 
 /**
  * Handles converting the raw draft strokes on the canvas into structural polyline shapes when pressing 'p'.
@@ -1930,6 +1706,7 @@ function handleConvertRasterToPolyline(ctx) {
     groups.forEach(group => {
         let avgPath = averageSegmentGroup(group);
         if (avgPath.length < 2) return;
+        avgPath = resamplePathBySpacing(avgPath, 5);
 
         const startPt = avgPath[0];
         const endPt = avgPath[avgPath.length - 1];
@@ -1941,7 +1718,7 @@ function handleConvertRasterToPolyline(ctx) {
         }
 
         const id = generateId('s');
-        const shapeName = `polyline ${Object.values(state.shapes).filter(s => s.type === 'polyline').length + 1}`;
+        const shapeName = `polyline ${Object.values(state.shapes as any).filter(s => (s as any).type === 'polyline').length + 1}`;
         const shape = {
             id,
             type: 'polyline',
@@ -1982,6 +1759,64 @@ function handleConvertRasterToPolyline(ctx) {
         draftCtx.clearRect(0, 0, state.canvas.width, state.canvas.height);
     }
 }
+
+/**
+ * Updates selectedShapeIds to contain all shapes inside the active selection drag rectangle.
+ */
+function updateSelectionByDragRect() {
+    const start = state.input.dragStartOnSVG;
+    const current = state.input.pointerOnSVG;
+    if (!start || !current) return;
+
+    const xMin = Math.min(start.x, current.x);
+    const xMax = Math.max(start.x, current.x);
+    const yMin = Math.min(start.y, current.y);
+    const yMax = Math.max(start.y, current.y);
+
+    const activeLayer = state.shapes[state.selectedLayerId];
+    if (!activeLayer || !activeLayer.childIds) return;
+
+    const selectedIds = [];
+
+    activeLayer.childIds.forEach((childId) => {
+        const shape = state.shapes[childId];
+        if (!shape) return;
+
+        let overlaps = false;
+
+        if (shape.type === 'polyline') {
+            if (shape.points) {
+                for (const p of shape.points) {
+                    if (p.x >= xMin && p.x <= xMax && p.y >= yMin && p.y <= yMax) {
+                        overlaps = true;
+                        break;
+                    }
+                }
+            }
+        } else if (shape.bezierIds) {
+            for (const bid of shape.bezierIds) {
+                const bez = state.beziers[bid];
+                if (bez && bez.samplePointByT) {
+                    for (const pVal of Object.values(bez.samplePointByT)) {
+                        const p = pVal as any;
+                        if (p.x >= xMin && p.x <= xMax && p.y >= yMin && p.y <= yMax) {
+                            overlaps = true;
+                            break;
+                        }
+                    }
+                }
+                if (overlaps) break;
+            }
+        }
+
+        if (overlaps) {
+            selectedIds.push(childId);
+        }
+    });
+
+    state.selectedShapeIds = selectedIds;
+}
+
 
 /**
  * Splits a stroke into segments at sharp curvature points.
@@ -2231,3 +2066,459 @@ function smoothPath(path, iterations = 2) {
     }
     return pts;
 }
+
+/**
+ * Resamples a path so that points are spaced by a target distance.
+ * @param {Array<{x:number, y:number}>} points - Path points.
+ * @param {number} spacing - Target distance between points.
+ * @returns {Array<{x:number, y:number}>}
+ */
+function resamplePathBySpacing(points, spacing) {
+    if (points.length < 2) return points;
+    const res = [points[0]];
+    let prev = points[0];
+    let carry = 0;
+
+    for (let i = 1; i < points.length; i++) {
+        const curr = points[i];
+        const d = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+        if (d === 0) continue;
+        
+        let distLeft = d + carry;
+        let p = prev;
+        const dx = (curr.x - prev.x) / d;
+        const dy = (curr.y - prev.y) / d;
+
+        while (distLeft >= spacing) {
+            const nextPt = {
+                x: p.x + dx * (spacing - carry),
+                y: p.y + dy * (spacing - carry)
+            };
+            res.push(nextPt);
+            p = nextPt;
+            distLeft -= spacing;
+            carry = 0;
+        }
+        carry = distLeft;
+        prev = curr;
+    }
+    
+    const last = points[points.length - 1];
+    const distToLast = Math.hypot(res[res.length - 1].x - last.x, res[res.length - 1].y - last.y);
+    if (distToLast > spacing * 0.3) {
+        res.push(last);
+    }
+    return res;
+}
+
+
+
+function deformPolyline(pointsA, pointsB, k) {
+    if (pointsB.length < 2 || pointsA.length === 0) return pointsA;
+
+    const dl = state.deformSettings?.dl ?? 100;
+
+    // --- 1. Aが閉じた（ループしている）形状かを判定 ---
+    // 始点と終点の距離が非常に近い場合、ループとする
+    const pFirstA = pointsA[0];
+    const pLastA = pointsA[pointsA.length - 1];
+    const isClosedA = Math.hypot(pFirstA.x - pLastA.x, pFirstA.y - pLastA.y) < 15.0;
+
+    // --- 2. Aの巡回シフト（スライス）処理の実行 (isClosedA の場合) ---
+    // 円の始終点境界でのクランプ歪みを防ぐため、下書きに最接近する位置を中心に A をローテートさせます。
+    // 方向判定（インデックスの正負）を行うより先に実行する必要があります。
+    let workingA = [...pointsA];
+    let shiftOffset = 0;
+
+    if (isClosedA) {
+        // Bの中点に最も近いAのインデックスをシフトの中心とする
+        const midB = pointsB[Math.floor(pointsB.length / 2)];
+        let ac = 0;
+        let minDistMid = Infinity;
+        for (let i = 0; i < pointsA.length; i++) {
+            const d = Math.hypot(midB.x - pointsA[i].x, midB.y - pointsA[i].y);
+            if (d < minDistMid) {
+                minDistMid = d;
+                ac = i;
+            }
+        }
+
+        // acが配列のほぼ中心になるように、ac - N/2 分だけ左に巡回シフト（ローテート）する
+        const N = pointsA.length;
+        shiftOffset = (ac - Math.floor(N / 2) + N) % N;
+
+        if (shiftOffset > 0) {
+            workingA = [];
+            for (let i = 0; i < N; i++) {
+                workingA.push(pointsA[(i + shiftOffset) % N]);
+            }
+        }
+    }
+
+    // --- 3. Bの各端点が【ローテート補正後の workingA】のどこに一番近いかを検出して方向（描き順）を判定・反転 ---
+    let idxStartA = 0;
+    let minDistStart = Infinity;
+    let idxEndA = 0;
+    let minDistEnd = Infinity;
+    for (let i = 0; i < workingA.length; i++) {
+        const dS = Math.hypot(pointsB[0].x - workingA[i].x, pointsB[0].y - workingA[i].y);
+        if (dS < minDistStart) {
+            minDistStart = dS;
+            idxStartA = i;
+        }
+        const dE = Math.hypot(pointsB[pointsB.length - 1].x - workingA[i].x, pointsB[pointsB.length - 1].y - workingA[i].y);
+        if (dE < minDistEnd) {
+            minDistEnd = dE;
+            idxEndA = i;
+        }
+    }
+
+    // Bの描き順が workingA と逆（負の相関）なら、pointsBを一時コピーして反転する
+    let workingB = [...pointsB];
+    if (idxStartA > idxEndA) {
+        workingB.reverse();
+    }
+
+    // --- 4. 補正された workingA / workingB に対し、検証済みの変形ロジックを実行 ---
+
+    // Aの各点の道のりを計算
+    const distsA = [0];
+    for (let i = 1; i < workingA.length; i++) {
+        distsA.push(distsA[i - 1] + Math.hypot(workingA[i].x - workingA[i - 1].x, workingA[i].y - workingA[i - 1].y));
+    }
+    const totalLenA = distsA[distsA.length - 1];
+
+    // Bの始点に最も近いA上の点を探す
+    let minIndexStart = 0;
+    let minDistStart2 = Infinity;
+    for (let i = 0; i < workingA.length; i++) {
+        const d = Math.hypot(workingB[0].x - workingA[i].x, workingB[0].y - workingA[i].y);
+        if (d < minDistStart2) {
+            minDistStart2 = d;
+            minIndexStart = i;
+        }
+    }
+
+    // Aの minIndexStart から逆方向に dl 離れるまで走査して targetIndexStart を決定（物理的な点にスナップ）
+    let currentDistStart = 0;
+    let targetIndexStart = minIndexStart;
+    for (let i = minIndexStart; i > 0; i--) {
+        const step = Math.hypot(workingA[i].x - workingA[i - 1].x, workingA[i].y - workingA[i - 1].y);
+        currentDistStart += step;
+        targetIndexStart = i - 1;
+        if (currentDistStart >= dl) break;
+    }
+    
+    // targetPtStart の決定：もしAの端（0）に達した場合は、残りの距離だけ接線方向に外側へ仮想延長する
+    let targetPtStart = workingA[targetIndexStart];
+    if (targetIndexStart === 0 && currentDistStart < dl && workingA.length >= 2) {
+        const rem = dl - currentDistStart;
+        const dx = workingA[0].x - workingA[1].x;
+        const dy = workingA[0].y - workingA[1].y;
+        const len = Math.hypot(dx, dy);
+        if (len > 0) {
+            targetPtStart = {
+                x: workingA[0].x + (dx / len) * rem,
+                y: workingA[0].y + (dy / len) * rem
+            };
+        }
+    }
+
+    // Bの終点に最も近いA上の点を探す
+    const nB = workingB.length - 1;
+    let minIndexEnd = 0;
+    let minDistEnd2 = Infinity;
+    for (let i = 0; i < workingA.length; i++) {
+        const d = Math.hypot(workingB[nB].x - workingA[i].x, workingB[nB].y - workingA[i].y);
+        if (d < minDistEnd2) {
+            minDistEnd2 = d;
+            minIndexEnd = i;
+        }
+    }
+
+    // Aの minIndexEnd から順方向に dl 離れるまで走査して targetIndexEnd を決定
+    let currentDistEnd = 0;
+    let targetIndexEnd = minIndexEnd;
+    for (let i = minIndexEnd; i < workingA.length - 1; i++) {
+        const step = Math.hypot(workingA[i + 1].x - workingA[i].x, workingA[i + 1].y - workingA[i].y);
+        currentDistEnd += step;
+        targetIndexEnd = i + 1;
+        if (currentDistEnd >= dl) break;
+    }
+    
+    // targetPtEnd の決定：もしAの端（N-1）に達した場合は、残りの距離だけ接線方向に外側へ仮想延長する
+    let targetPtEnd = workingA[targetIndexEnd];
+    const N = workingA.length;
+    if (targetIndexEnd === N - 1 && currentDistEnd < dl && N >= 2) {
+        const rem = dl - currentDistEnd;
+        const dx = workingA[N - 1].x - workingA[N - 2].x;
+        const dy = workingA[N - 1].y - workingA[N - 2].y;
+        const len = Math.hypot(dx, dy);
+        if (len > 0) {
+            targetPtEnd = {
+                x: workingA[N - 1].x + (dx / len) * rem,
+                y: workingA[N - 1].y + (dy / len) * rem
+            };
+        }
+    }
+
+    // --- Bの始点側・終点側の接線ベクトル取得 ---
+    const extLength = 15;
+
+    // 始点側延長
+    const dxStartB = workingB[0].x - workingB[1].x;
+    const dyStartB = workingB[0].y - workingB[1].y;
+    const distStart = Math.hypot(dxStartB, dyStartB);
+    const uStartB = { x: dxStartB / distStart, y: dyStartB / distStart };
+
+    const idxA_S1 = targetIndexStart;
+    const idxA_S2 = Math.min(workingA.length - 1, idxA_S1 + 1);
+    const dxStartA = workingA[idxA_S1].x - workingA[idxA_S2].x;
+    const dyStartA = workingA[idxA_S1].y - workingA[idxA_S2].y;
+    const distStartA = Math.hypot(dxStartA, dyStartA);
+    const uStartA = distStartA > 0 ? { x: dxStartA / distStartA, y: dyStartA / distStartA } : uStartB;
+
+    const distToTargetStart = Math.hypot(targetPtStart.x - workingB[0].x, targetPtStart.y - workingB[0].y);
+    const stepDistStart = distToTargetStart / extLength;
+
+    const startExtensions = [];
+    let currPtStart = { x: workingB[0].x, y: workingB[0].y };
+    for (let i = 1; i <= extLength; i++) {
+        const t = i / extLength;
+        const ux = uStartB.x * (1 - t) + uStartA.x * t;
+        const uy = uStartB.y * (1 - t) + uStartA.y * t;
+        const uLen = Math.hypot(ux, uy);
+        const uBlend = { x: ux / uLen, y: uy / uLen };
+
+        const nextX = currPtStart.x + uBlend.x * stepDistStart;
+        const nextY = currPtStart.y + uBlend.y * stepDistStart;
+
+        const blendT = t * t;
+        currPtStart = {
+            x: nextX * (1 - blendT) + targetPtStart.x * blendT,
+            y: nextY * (1 - blendT) + targetPtStart.y * blendT
+        };
+
+        startExtensions.push({
+            x: currPtStart.x,
+            y: currPtStart.y,
+            isExtended: true
+        });
+    }
+    startExtensions.reverse();
+
+    // 終点側延長
+    const dxEndB = workingB[nB].x - workingB[nB - 1].x;
+    const dyEndB = workingB[nB].y - workingB[nB - 1].y;
+    const distEnd = Math.hypot(dxEndB, dyEndB);
+    const uEndB = { x: dxEndB / distEnd, y: dyEndB / distEnd };
+
+    const idxA_E1 = targetIndexEnd;
+    const idxA_E2 = Math.max(0, idxA_E1 - 1);
+    const dxEndA = workingA[idxA_E1].x - workingA[idxA_E2].x;
+    const dyEndA = workingA[idxA_E1].y - workingA[idxA_E2].y;
+    const distEndA = Math.hypot(dxEndA, dyEndA);
+    const uEndA = distEndA > 0 ? { x: dxEndA / distEndA, y: dyEndA / distEndA } : uEndB;
+
+    const distToTargetEnd = Math.hypot(targetPtEnd.x - workingB[nB].x, targetPtEnd.y - workingB[nB].y);
+    const stepDistEnd = distToTargetEnd / extLength;
+
+    const endExtensions = [];
+    let currPtEnd = { x: workingB[nB].x, y: workingB[nB].y };
+    for (let i = 1; i <= extLength; i++) {
+        const t = i / extLength;
+        const ux = uEndB.x * (1 - t) + uEndA.x * t;
+        const uy = uEndB.y * (1 - t) + uEndA.y * t;
+        const uLen = Math.hypot(ux, uy);
+        const uBlend = { x: ux / uLen, y: uy / uLen };
+
+        const nextX = currPtEnd.x + uBlend.x * stepDistEnd;
+        const nextY = currPtEnd.y + uBlend.y * stepDistEnd;
+
+        const blendT = t * t;
+        currPtEnd = {
+            x: nextX * (1 - blendT) + targetPtEnd.x * blendT,
+            y: nextY * (1 - blendT) + targetPtEnd.y * blendT
+        };
+
+        endExtensions.push({
+            x: currPtEnd.x,
+            y: currPtEnd.y,
+            isExtended: true
+        });
+    }
+
+    const fullB = [...startExtensions, ...workingB.map(p => ({ ...p, isExtended: false })), ...endExtensions];
+
+    const distsFullB = [];
+    let accumulated = 0;
+    distsFullB.push(0);
+    for (let i = 1; i < fullB.length; i++) {
+        const step = Math.hypot(fullB[i].x - fullB[i - 1].x, fullB[i].y - fullB[i - 1].y);
+        accumulated += step;
+        distsFullB.push(accumulated);
+    }
+    const totalLenB = distsFullB[distsFullB.length - 1];
+
+    const sA_targetStart = distsA[targetIndexStart];
+    const sA_targetEnd = distsA[targetIndexEnd];
+    const activeLenA = sA_targetEnd - sA_targetStart;
+
+    const movedWorkingA = workingA.map((pa, idx) => {
+        const sA = distsA[idx];
+        let closestPb = { x: pa.x, y: pa.y };
+        let weight = 0.0;
+
+        if (idx < targetIndexStart) {
+            weight = 0.0;
+        } else if (idx > targetIndexEnd) {
+            weight = 0.0;
+        } else {
+            weight = 1.0;
+        }
+
+        if (weight > 0.0) {
+            const rawRatio = activeLenA > 0 ? (sA - sA_targetStart) / activeLenA : 0.5;
+            const ratio = Math.max(0, Math.min(1, rawRatio));
+            const targetS_B = ratio * totalLenB;
+
+            let idx0 = 0;
+            let idx1 = 0;
+            let frac = 0;
+            for (let i = 0; i < distsFullB.length - 1; i++) {
+                if (targetS_B >= distsFullB[i] && targetS_B <= distsFullB[i + 1]) {
+                    idx0 = i;
+                    idx1 = i + 1;
+                    const span = distsFullB[idx1] - distsFullB[idx0];
+                    frac = span > 0 ? (targetS_B - distsFullB[idx0]) / span : 0;
+                    break;
+                }
+            }
+
+            const p0 = fullB[idx0];
+            const p1 = fullB[idx1];
+            closestPb = {
+                x: p0.x * (1 - frac) + p1.x * frac,
+                y: p0.y * (1 - frac) + p1.y * frac
+            };
+        }
+
+        const dx = closestPb.x - pa.x;
+        const dy = closestPb.y - pa.y;
+
+        return {
+            x: pa.x + k * weight * dx,
+            y: pa.y + k * weight * dy
+        };
+    });
+
+    // --- 4.5 境界点（targetIndexStart, targetIndexEnd）の折れ曲がり（段差）を、前後隣接点の中間値でスムーズ補正 ---
+    if (targetIndexStart > 0 && targetIndexStart < movedWorkingA.length - 1) {
+        movedWorkingA[targetIndexStart] = {
+            x: (movedWorkingA[targetIndexStart - 1].x + movedWorkingA[targetIndexStart + 1].x) / 2,
+            y: (movedWorkingA[targetIndexStart - 1].y + movedWorkingA[targetIndexStart + 1].y) / 2
+        };
+    }
+    if (targetIndexEnd > 0 && targetIndexEnd < movedWorkingA.length - 1) {
+        movedWorkingA[targetIndexEnd] = {
+            x: (movedWorkingA[targetIndexEnd - 1].x + movedWorkingA[targetIndexEnd + 1].x) / 2,
+            y: (movedWorkingA[targetIndexEnd - 1].y + movedWorkingA[targetIndexEnd + 1].y) / 2
+        };
+    }
+
+    // --- 5. 巡回シフトされた結果を元の順序へ戻して返却 ---
+    if (isClosedA && shiftOffset > 0) {
+        const N = pointsA.length;
+        const originalMoved = new Array(N);
+        for (let i = 0; i < N; i++) {
+            originalMoved[(i + shiftOffset) % N] = movedWorkingA[i];
+        }
+        return originalMoved;
+    }
+
+    return movedWorkingA;
+}
+
+function syncDeformSlidersFromState() {
+    const dlSlider = getDom('#slider-deform-dl');
+    const dlLabel = getDom('#val-deform-dl');
+    if (dlSlider && state.deformSettings) {
+        dlSlider.value = String(state.deformSettings.dl ?? 100);
+        if (dlLabel) dlLabel.textContent = String(state.deformSettings.dl ?? 100);
+    }
+}
+
+
+function handlePolylineDeform() {
+    if (state.anchoredShapeIds.length !== 1) return;
+    const anchorId = state.anchoredShapeIds[0];
+    const anchorShape = state.shapes[anchorId];
+    if (!anchorShape || anchorShape.type !== 'polyline' || !anchorShape.points) return;
+
+    const dragStart = state.input.dragStart;
+    if (!dragStart) return;
+    const currentX = state.input.pointer.x;
+    const k = (currentX - dragStart.x) * 0.01;
+
+    state.selectedShapeIds.forEach(id => {
+        const shape = state.shapes[id];
+        if (!shape || shape.type !== 'polyline' || !shape.points) return;
+
+        const startPoints = state.deformStartPoints?.[id];
+        if (!startPoints) return;
+
+        // Calculate deformed points
+        shape.points = deformPolyline(startPoints, anchorShape.points, k);
+        
+        // Mark shape cache as dirty to force redraw
+        markShapeDirty(id);
+    });
+}
+
+// FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
+(window as any).handleInputUpdate = handleInputUpdate;
+(window as any).handleInputUpdate_old = handleInputUpdate_old;
+(window as any).updateTransformPivotToCenter = updateTransformPivotToCenter;
+(window as any).handleMove = handleMove;
+(window as any).handleRotate = handleRotate;
+(window as any).handleScale = handleScale;
+(window as any).handleConvertRasterToPolyline = handleConvertRasterToPolyline;
+(window as any).handleZoom = handleZoom;
+(window as any).handleToggleAnchor = handleToggleAnchor;
+(window as any).handleEnterAction = handleEnterAction;
+(window as any).handleTransformStart = handleTransformStart;
+(window as any).handleTransformEnd = handleTransformEnd;
+(window as any).handleToggleThicknessEdit = handleToggleThicknessEdit;
+(window as any).handleToggleOutline = handleToggleOutline;
+(window as any).handleToggleFillEnabled = handleToggleFillEnabled;
+(window as any).handleTogglePatternEdit = handleTogglePatternEdit;
+(window as any).handleUndoAction = handleUndoAction;
+(window as any).handleCopy = handleCopy;
+(window as any).handlePaste = handlePaste;
+(window as any).handleRedoAction = handleRedoAction;
+(window as any).handleClearVertexFocus = handleClearVertexFocus;
+(window as any).handleFocusVertexPrev = handleFocusVertexPrev;
+(window as any).handleFocusVertexNext = handleFocusVertexNext;
+(window as any).toggleHelpModal = toggleHelpModal;
+(window as any).handleQuitToGallery = handleQuitToGallery;
+(window as any).resolveBezierDependencies = resolveBezierDependencies;
+(window as any).getCombinedBounds = getCombinedBounds;
+(window as any).deleteSelectedVertex = deleteSelectedVertex;
+(window as any).deleteSelectedShapes = deleteSelectedShapes;
+(window as any).handleDeleteThicknessPoint = handleDeleteThicknessPoint;
+(window as any).handleCreateWrap = handleCreateWrap;
+(window as any).handleAddCircleStart = handleAddCircleStart;
+(window as any).switchSettingsTab = switchSettingsTab;
+(window as any).addShapeAt = addShapeAt;
+(window as any).createWrap = createWrap;
+(window as any).updateSelectionByDragRect = updateSelectionByDragRect;
+(window as any).handlePolylineDeform = handlePolylineDeform;
+(window as any).syncDeformSlidersFromState = syncDeformSlidersFromState;
+(window as any).handleDDist = handleDDist;
+(window as any).saveImageSettings = saveImageSettings;
+
+export {};
+
+
+
+

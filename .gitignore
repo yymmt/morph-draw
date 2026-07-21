@@ -3,3 +3,5 @@ ai_answer_tmp.md
 ai_context.md
 .vscode
 tmp/
+node_modules/
+dist/
