@@ -96,103 +96,6 @@ function initWebGLPatternRenderer() {
     
     // Initialize WebGL Texture Dictionary
     state.webglTextures = {};
-    
-    // Load Fills and Strokes with fallback
-    loadWebGLTexture('sample', 'image/sample.png', drawFallbackLeaf);
-    loadWebGLTexture('brush_sample', 'image/brush_sample.png', drawFallbackBrush);
-}
-
-function loadWebGLTexture(name, src, fallbackDrawFn) {
-    const gl = state.gl;
-    if (!gl) return;
-    
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    
-    // Procedural Fallback
-    if (fallbackDrawFn) {
-        fallbackDrawFn(texture);
-    } else {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([200, 200, 200, 255]));
-    }
-    
-    state.webglTextures[name] = texture;
-    
-    if (typeof Image !== 'undefined') {
-        const image = new Image();
-        image.onload = () => {
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        };
-        image.onerror = () => {
-            console.warn(`Failed to load texture image: ${src}, using procedural fallback.`);
-        };
-        image.src = src;
-    }
-}
-
-function drawFallbackLeaf(texture) {
-    if (typeof document === 'undefined') return;
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    
-    ctx.clearRect(0, 0, 256, 256);
-    ctx.fillStyle = '#4caf50';
-    ctx.beginPath();
-    ctx.moveTo(32, 224);
-    ctx.quadraticCurveTo(128, 224, 224, 128);
-    ctx.quadraticCurveTo(224, 32, 128, 32);
-    ctx.quadraticCurveTo(32, 128, 32, 224);
-    ctx.fill();
-    
-    ctx.strokeStyle = '#8bc34a';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(32, 224);
-    ctx.lineTo(160, 96);
-    ctx.stroke();
-    
-    const gl = state.gl;
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-}
-
-function drawFallbackBrush(texture) {
-    if (typeof document === 'undefined') return;
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    
-    ctx.clearRect(0, 0, 256, 64);
-    ctx.strokeStyle = '#ff9800';
-    ctx.lineWidth = 8;
-    ctx.lineCap = 'round';
-    for (let x = -16; x < 256; x += 24) {
-        ctx.beginPath();
-        ctx.moveTo(x, 8);
-        ctx.lineTo(x + 32, 56);
-        ctx.stroke();
-    }
-    
-    const gl = state.gl;
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
 
 function interpolatePerimeter(tA, tB, factor) {
@@ -378,9 +281,6 @@ function renderPatternWebGL(positions, textureName) {
 
 // FUTURE: Phase out 'window as any' and 'global.d.ts' in favor of standard ES Modules (export/import) as refactoring opportunities arise.
 (window as any).initWebGLPatternRenderer = initWebGLPatternRenderer;
-(window as any).loadWebGLTexture = loadWebGLTexture;
-(window as any).drawFallbackLeaf = drawFallbackLeaf;
-(window as any).drawFallbackBrush = drawFallbackBrush;
 (window as any).interpolatePerimeter = interpolatePerimeter;
 (window as any).getShapePoint = getShapePoint;
 (window as any).initPatternCorners = initPatternCorners;

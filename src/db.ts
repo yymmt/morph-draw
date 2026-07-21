@@ -18,10 +18,6 @@ function loadDrawingTexture(id) {
             resolve(state.webglTextures[id]);
             return;
         }
-        if (id === 'sample' || id === 'brush_sample') {
-            resolve(state.webglTextures ? state.webglTextures[id] : null);
-            return;
-        }
         if (!db) {
             resolve(null);
             return;
