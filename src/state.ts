@@ -38,18 +38,10 @@ const state = {
     selectedLayerId: null, // Currently active layer ID
     maxDrawingId: 0, // Cache for maximum drawing ID
     drawingName: '', // Name of the active drawing
-    search: {
-        active: false,
-        results: [],
-        currentIndex: -1
-    },
     patternEdit: {
         active: false,
         selectedCorner: 'TL',
         targetT: 0.0
-    },
-    command: {
-        active: false
     },
     draftStrokes: [],
     currentDraftStroke: null,
@@ -168,10 +160,6 @@ const keyHandlers = {
         },
         '?': { keydown: { f: () => toggleHelpModal() } },
         q: { keydown: { f: (ctx) => handleQuitToGallery(ctx) } },
-        '/': { keydown: { f: (ctx) => handleOpenSearch(ctx) } },
-        ':': { keydown: { f: (ctx) => handleOpenCommand(ctx) } },
-        n: { keydown: { f: (ctx) => handleSearchNext(ctx), needsRender: true } },
-        N: { keydown: { f: (ctx) => handleSearchPrev(ctx), needsRender: true } },
         ArrowLeft: { keydown: { f: (ctx) => handleFocusVertexPrev(ctx), needsRender: true } },
         ArrowRight: { keydown: { f: (ctx) => handleFocusVertexNext(ctx), needsRender: true } },
         Escape: { keydown: { f: (ctx) => handleClearVertexFocus(ctx), needsRender: true } },

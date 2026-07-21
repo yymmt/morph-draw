@@ -109,61 +109,7 @@ function initEvents() {
         };
     }
 
-    const searchInput = getDom('#search-input');
-    if (searchInput) {
-        searchInput.oninput = () => {
-            performSearch(searchInput.value);
-            applySearchResult();
-        };
-        searchInput.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                closeSearchMode(true);
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                closeSearchMode(false);
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                if (state.search.results.length > 0) {
-                    state.search.currentIndex = (state.search.currentIndex + 1) % state.search.results.length;
-                    applySearchResult();
-                }
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                if (state.search.results.length > 0) {
-                    state.search.currentIndex = (state.search.currentIndex - 1 + state.search.results.length) % state.search.results.length;
-                    applySearchResult();
-                }
-            }
-        };
-        searchInput.onblur = () => {
-            setTimeout(() => {
-                if (state.search.active) {
-                    closeSearchMode(true);
-                }
-            }, 200);
-        };
-    }
 
-    const commandInput = getDom('#command-input');
-    if (commandInput) {
-        commandInput.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                closeCommandMode(true);
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                closeCommandMode(false);
-            }
-        };
-        commandInput.onblur = () => {
-            setTimeout(() => {
-                if (state.command.active) {
-                    closeCommandMode(false);
-                }
-            }, 200);
-        };
-    }
 
     if (svg) registerHoverListener(svg);
     if (minimapCanvas) registerHoverListener(minimapCanvas);

@@ -568,42 +568,7 @@ body {
 
 /* .layer-control-btn.active */
 
-/* Search Bar Overlay */
-#search-bar {
-    position: absolute;
-    bottom: 24px;
-    left: 24px;
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid #ccd1d9;
-    border-radius: 6px;
-    padding: 6px 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
-    z-index: 200;
-    transition: all 0.2s ease;
-}
 
-#search-bar.hidden {
-    display: none !important;
-}
-
-.search-prefix {
-    font-size: 16px;
-    color: #2196F3;
-    font-weight: bold;
-}
-
-#search-input {
-    background: transparent;
-    border: none;
-    outline: none;
-    font-family: inherit;
-    font-size: 14px;
-    width: 220px;
-    color: #333;
-}
 
 /* Settings Panel */
 #settings-panel {
@@ -778,42 +743,7 @@ body {
     display: none !important;
 }
 
-/* Command Bar Overlay */
-#command-bar {
-    position: absolute;
-    bottom: 24px;
-    left: 24px;
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid #ccd1d9;
-    border-radius: 6px;
-    padding: 6px 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
-    z-index: 200;
-    transition: all 0.2s ease;
-}
 
-#command-bar.hidden {
-    display: none !important;
-}
-
-.command-prefix {
-    font-size: 16px;
-    color: #9c27b0;
-    font-weight: bold;
-}
-
-#command-input {
-    background: transparent;
-    border: none;
-    outline: none;
-    font-family: inherit;
-    font-size: 14px;
-    width: 280px;
-    color: #333;
-}
 
 /* Gallery Container & Sections */
 #gallery-container {

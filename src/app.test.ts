@@ -26,11 +26,7 @@ beforeAll(() => {
                 <span id="val-deform-dl">100</span>
                 <button id="btn-add-layer"></button>
                 <div id="layer-list"></div>
-                <input id="search-input">
-                <input id="command-input">
                 <div id="deform-guide"></div>
-                <div id="search-bar"></div>
-                <div id="command-bar"></div>
                 <aside id="minimap-panel" class="collapsed">
                     <canvas id="minimap-canvas"></canvas>
                     <button id="btn-toggle-minimap"></button>
